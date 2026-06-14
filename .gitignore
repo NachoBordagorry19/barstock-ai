@@ -17,6 +17,9 @@ build/
 # Vercel
 .vercel
 
+# Claude Code local settings
+.claude/
+
 # Misc
 .DS_Store
 *.log

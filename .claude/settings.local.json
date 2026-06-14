@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(winget install *)",
-      "PowerShell(gh *)",
-      "PowerShell(gh auth *)"
-    ]
-  }
-}
