@@ -19,7 +19,7 @@ body {
 }
 
 ::selection {
-  background: rgba(212, 160, 23, 0.3);
+  background: rgba(79, 95, 245, 0.3);
 }
 
 /* Subtle scrollbar */
@@ -40,20 +40,20 @@ body {
 
 @layer utilities {
   .gold-text {
-    background: linear-gradient(90deg, #f0d27a, #d4a017);
+    background: linear-gradient(90deg, #a5b4fc, #6366f1);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .glass {
-    background: rgba(20, 24, 38, 0.7);
+    background: rgba(15, 17, 26, 0.7);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.06);
   }
   .grid-bg {
     background-image:
-      radial-gradient(circle at 20% 10%, rgba(212, 160, 23, 0.08), transparent 40%),
-      radial-gradient(circle at 80% 0%, rgba(54, 64, 92, 0.25), transparent 35%);
+      radial-gradient(circle at 20% 10%, rgba(79, 95, 245, 0.08), transparent 40%),
+      radial-gradient(circle at 80% 0%, rgba(54, 64, 92, 0.20), transparent 35%);
   }
 }
 
