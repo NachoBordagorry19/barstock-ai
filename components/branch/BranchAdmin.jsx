@@ -275,51 +275,104 @@ function EditRow({ bottle, onCancel, onSave, categories }) {
 }
 
 function Alertas() {
-  const { bottles } = useApp();
+  const { bottles, getExpiredItems, getNearExpirationItems } = useApp();
   const low = lowStock(bottles);
   const suggestion = (b) => Math.max(b.threshold * 2 - b.sealed, 1);
 
-  return (
-    <Card className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold">Alertas de reposición</h3>
-          <p className="text-sm text-gray-400">Productos que alcanzaron o bajaron del stock mínimo.</p>
-        </div>
-        <Badge tone={low.length ? "red" : "green"}>{low.length} alertas</Badge>
-      </div>
+  // Consultar vencimientos con fecha simulada (13 de Julio de 2026)
+  const simulatedDate = new Date("2026-07-13");
+  const expired = getExpiredItems(simulatedDate);
+  const nearExp = getNearExpirationItems(simulatedDate, 30);
 
-      {low.length === 0 ? (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
-          Todo en orden: ningún producto está por debajo del mínimo.
+  const getProdName = (id) => bottles.find((b) => b.id === id)?.name || "Desconocido";
+
+  return (
+    <div className="space-y-6">
+      {/* Alertas de reposición */}
+      <Card className="p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">Alertas de reposición</h3>
+            <p className="text-sm text-gray-400">Productos que alcanzaron o bajaron del stock mínimo.</p>
+          </div>
+          <Badge tone={low.length ? "red" : "green"}>{low.length} alertas</Badge>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="py-3 pr-4">Producto</th>
-                <th className="py-3 pr-4">Cerradas</th>
-                <th className="py-3 pr-4">Mínimo</th>
-                <th className="py-3 pr-4">Sugerido a comprar</th>
-                <th className="py-3">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {low.map((b) => (
-                <tr key={b.id} className="border-b border-white/5 last:border-0">
-                  <td className="py-3 pr-4 font-medium text-gray-200">{b.name}</td>
-                  <td className="py-3 pr-4 text-gray-400">{b.sealed}</td>
-                  <td className="py-3 pr-4 text-gray-400">{b.threshold}</td>
-                  <td className="py-3 pr-4"><span className="font-semibold gold-text">{suggestion(b)} u.</span></td>
-                  <td className="py-3"><Badge tone={b.sealed === 0 ? "red" : "amber"}>{b.sealed === 0 ? "Sin stock" : "Stock bajo"}</Badge></td>
+
+        {low.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
+            Todo en orden: ningún producto está por debajo del mínimo.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <th className="py-3 pr-4">Producto</th>
+                  <th className="py-3 pr-4">Cerradas</th>
+                  <th className="py-3 pr-4">Mínimo</th>
+                  <th className="py-3 pr-4">Sugerido a comprar</th>
+                  <th className="py-3">Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {low.map((b) => (
+                  <tr key={b.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-3 pr-4 font-medium text-gray-200">{b.name}</td>
+                    <td className="py-3 pr-4 text-gray-400">{b.sealed}</td>
+                    <td className="py-3 pr-4 text-gray-400">{b.threshold}</td>
+                    <td className="py-3 pr-4"><span className="font-semibold gold-text">{suggestion(b)} u.</span></td>
+                    <td className="py-3"><Badge tone={b.sealed === 0 ? "red" : "amber"}>{b.sealed === 0 ? "Sin stock" : "Stock bajo"}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Alertas de Vencimiento */}
+      <Card className="p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">Control de Fechas de Vencimiento</h3>
+            <p className="text-sm text-gray-400">Productos vencidos o próximos a vencer en los próximos 30 días.</p>
+          </div>
+          <Badge tone={expired.length ? "red" : nearExp.length ? "amber" : "green"}>
+            {expired.length + nearExp.length} alertas
+          </Badge>
         </div>
-      )}
-    </Card>
+
+        {expired.length === 0 && nearExp.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
+            Excelente: no hay mercadería vencida ni próxima a vencer.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {expired.map((s, idx) => (
+              <div key={`exp-${idx}`} className="flex items-center justify-between rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-red-300">{getProdName(s.productId)}</div>
+                  <div className="text-xs text-gray-400 capitalize">Ubicación: {s.location} | Cantidad: {s.quantity} u.</div>
+                  <div className="text-xs text-red-400 mt-1 font-mono">Venció el: {s.expirationDate}</div>
+                </div>
+                <Badge tone="red">Vencido</Badge>
+              </div>
+            ))}
+
+            {nearExp.map((s, idx) => (
+              <div key={`near-${idx}`} className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-amber-300">{getProdName(s.productId)}</div>
+                  <div className="text-xs text-gray-400 capitalize">Ubicación: {s.location} | Cantidad: {s.quantity} u.</div>
+                  <div className="text-xs text-amber-400 mt-1 font-mono">Vence el: {s.expirationDate}</div>
+                </div>
+                <Badge tone="amber">Vence pronto</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -512,6 +565,7 @@ function Logistica() {
     paymentStatus: "pendiente",
     quantity: "",
     purchasePrice: "",
+    expirationDate: "",
   });
 
   // Formulario Transferencias
@@ -536,6 +590,7 @@ function Logistica() {
           productId: purchaseForm.productId,
           quantity: Number(purchaseForm.quantity),
           purchasePrice: Number(purchaseForm.purchasePrice),
+          expirationDate: purchaseForm.expirationDate || null,
         },
       ],
     });
@@ -545,6 +600,7 @@ function Logistica() {
       invoiceNumber: "",
       quantity: "",
       purchasePrice: "",
+      expirationDate: "",
     }));
   };
 
@@ -680,6 +736,14 @@ function Logistica() {
                   />
                 </Field>
               </div>
+
+              <Field label="Fecha de Vencimiento (Opcional)">
+                <Input
+                  type="date"
+                  value={purchaseForm.expirationDate}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, expirationDate: e.target.value })}
+                />
+              </Field>
 
               <Field label="Estado de Pago">
                 <Select

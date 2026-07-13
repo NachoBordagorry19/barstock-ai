@@ -12,6 +12,7 @@ import { StockService } from "@/lib/services/StockService";
 import { Product } from "@/lib/domain/Product";
 import { Purchase } from "@/lib/domain/Purchase";
 import { Transfer } from "@/lib/domain/Transfer";
+import { StockItem } from "@/lib/domain/StockItem";
 
 const AppCtx = createContext(null);
 
@@ -37,12 +38,16 @@ export function AppProvider({ children }) {
   const [transfers, setTransfers] = useState([]);
   const [movements, setMovements] = useState([]);
   
-  // Stock inicial por ubicaciones (depósito y barra) basado en initialBottles
+  // Stock inicial por ubicaciones (depósito y barra) basado en initialBottles con fechas de vencimiento de prueba
   const [stocks, setStocks] = useState(() => {
     const list = [];
     initialBottles.forEach(b => {
-      list.push({ productId: b.id, location: "depósito", quantity: b.sealed });
-      list.push({ productId: b.id, location: "barra", quantity: b.open });
+      let expDate = null;
+      if (b.id === "b1") expDate = "2026-06-15"; // Ya vencido (comparado con Julio 2026)
+      if (b.id === "b2") expDate = "2026-07-28"; // Próximo a vencer
+      if (b.id === "b3") expDate = "2026-08-10"; // Próximo a vencer
+      list.push({ productId: b.id, location: "depósito", quantity: b.sealed, expirationDate: expDate });
+      list.push({ productId: b.id, location: "barra", quantity: b.open, expirationDate: null });
     });
     return list;
   });
@@ -144,28 +149,35 @@ export function AppProvider({ children }) {
   const stockRepository = useMemo(() => ({
     getByProductAndLocation: (productId, location) => {
       const s = stocks.find(st => st.productId === productId && st.location === location);
-      return s ? { ...s } : { productId, location, quantity: 0 };
+      return s ? new StockItem(s) : new StockItem({ productId, location, quantity: 0 });
     },
     save: (newStock) => {
+      const plain = {
+        productId: newStock.productId,
+        location: newStock.location,
+        quantity: newStock.quantity,
+        expirationDate: newStock.expirationDate ? newStock.expirationDate.toISOString().split('T')[0] : null
+      };
       setStocks(prev => {
-        const idx = prev.findIndex(st => st.productId === newStock.productId && st.location === newStock.location);
+        const idx = prev.findIndex(st => st.productId === plain.productId && st.location === plain.location);
         if (idx !== -1) {
           const next = [...prev];
-          next[idx] = newStock;
+          next[idx] = plain;
           return next;
         }
-        return [...prev, newStock];
+        return [...prev, plain];
       });
       // Sincronizar también con el estado plano de 'bottles' para no romper vistas viejas
       setBottles(prev => prev.map(b => {
-        if (b.id === newStock.productId) {
-          if (newStock.location === "depósito") return { ...b, sealed: newStock.quantity };
-          if (newStock.location === "barra") return { ...b, open: newStock.quantity };
+        if (b.id === plain.productId) {
+          if (plain.location === "depósito") return { ...b, sealed: plain.quantity };
+          if (plain.location === "barra") return { ...b, open: plain.quantity };
         }
         return b;
       }));
-      return newStock;
-    }
+      return new StockItem(plain);
+    },
+    findAll: () => stocks.map(s => new StockItem(s)),
   }), [stocks]);
 
   const transferRepository = useMemo(() => ({
@@ -237,6 +249,14 @@ export function AppProvider({ children }) {
     setPurchases(prev => prev.map(p => p.id === purchaseId ? { ...p, paymentStatus: "pagado" } : p));
   }, []);
 
+  const getExpiredItems = useCallback((date) => {
+    return stockService.getExpiredItems(date);
+  }, [stockService]);
+
+  const getNearExpirationItems = useCallback((date, days) => {
+    return stockService.getNearExpirationItems(date, days);
+  }, [stockService]);
+
   // --- Usuarios scanner (Admin de sucursal: modifica / desactiva) ---
   const updateScannerUser = useCallback((id, patch) => {
     setScannerUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
@@ -286,6 +306,8 @@ export function AppProvider({ children }) {
       sendTransfer,
       receiveTransfer,
       markPurchaseAsPaid,
+      getExpiredItems,
+      getNearExpirationItems,
     }),
     [
       screen,
@@ -314,6 +336,8 @@ export function AppProvider({ children }) {
       sendTransfer,
       receiveTransfer,
       markPurchaseAsPaid,
+      getExpiredItems,
+      getNearExpirationItems,
     ]
   );
 
