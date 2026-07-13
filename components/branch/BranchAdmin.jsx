@@ -10,6 +10,7 @@ import { exportToExcel } from "@/lib/exportExcel";
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "inventario", label: "Inventario" },
+  { id: "logistica", label: "Logística y Compras" },
   { id: "alertas", label: "Alertas" },
   { id: "empleados", label: "Empleados" },
   { id: "reportes", label: "Reportes" },
@@ -22,6 +23,7 @@ export default function BranchAdmin() {
     <Shell roleLabel="Admin de Sucursal · Palermo Soho" tabs={TABS} active={tab} onTab={setTab}>
       {tab === "dashboard" && <Dashboard onGo={setTab} />}
       {tab === "inventario" && <Inventario />}
+      {tab === "logistica" && <Logistica />}
       {tab === "alertas" && <Alertas />}
       {tab === "empleados" && <Empleados />}
       {tab === "reportes" && <Reportes />}
@@ -482,6 +484,379 @@ function Perfil() {
           {msg && <p className="text-sm text-gold-300">{msg}</p>}
         </form>
       </Card>
+    </div>
+  );
+}
+
+function Logistica() {
+  const {
+    bottles,
+    purchases,
+    transfers,
+    addPurchase,
+    sendTransfer,
+    receiveTransfer,
+    markPurchaseAsPaid,
+    stocks,
+  } = useApp();
+
+  const [subTab, setSubTab] = useState("compras");
+
+  // Formulario Compras
+  const [purchaseForm, setPurchaseForm] = useState({
+    productId: bottles[0]?.id || "",
+    wholesaler: "Pasifox",
+    invoiceNumber: "",
+    paymentType: "crédito",
+    paymentStatus: "pendiente",
+    quantity: "",
+    purchasePrice: "",
+  });
+
+  // Formulario Transferencias
+  const [transferForm, setTransferForm] = useState({
+    productId: bottles[0]?.id || "",
+    originLocation: "depósito",
+    destinationLocation: "barra",
+    quantity: "",
+  });
+
+  const handlePurchaseSubmit = (e) => {
+    e.preventDefault();
+    if (!purchaseForm.productId || !purchaseForm.quantity || !purchaseForm.purchasePrice) return;
+    
+    addPurchase({
+      wholesaler: purchaseForm.wholesaler,
+      invoiceNumber: purchaseForm.invoiceNumber || `FC-${Math.floor(Math.random() * 900000 + 100000)}`,
+      paymentType: purchaseForm.paymentType,
+      paymentStatus: purchaseForm.paymentStatus,
+      items: [
+        {
+          productId: purchaseForm.productId,
+          quantity: Number(purchaseForm.quantity),
+          purchasePrice: Number(purchaseForm.purchasePrice),
+        },
+      ],
+    });
+
+    setPurchaseForm((prev) => ({
+      ...prev,
+      invoiceNumber: "",
+      quantity: "",
+      purchasePrice: "",
+    }));
+  };
+
+  const handleTransferSubmit = (e) => {
+    e.preventDefault();
+    if (!transferForm.productId || !transferForm.quantity) return;
+
+    try {
+      sendTransfer({
+        items: [
+          {
+            productId: transferForm.productId,
+            quantity: Number(transferForm.quantity),
+          },
+        ],
+        originLocation: transferForm.originLocation,
+        destinationLocation: transferForm.destinationLocation,
+        senderUserId: "Carlos Medina", // Usuario actual logueado simulado
+      });
+      setTransferForm((prev) => ({ ...prev, quantity: "" }));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // Helper para buscar nombre de producto por id
+  const getProdName = (id) => bottles.find((b) => b.id === id)?.name || "Desconocido";
+
+  // Helper para ver stock por ubicación en tiempo real
+  const getStockQty = (productId, location) => {
+    const s = stocks.find((st) => st.productId === productId && st.location === location);
+    return s ? s.quantity : 0;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-2">
+        <Button variant={subTab === "compras" ? "primary" : "ghost"} onClick={() => setSubTab("compras")}>
+          Compras y Facturas
+        </Button>
+        <Button variant={subTab === "transferencias" ? "primary" : "ghost"} onClick={() => setSubTab("transferencias")}>
+          Traslados (Doble Confirmación)
+        </Button>
+      </div>
+
+      {subTab === "compras" && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Alta Compra */}
+          <Card className="p-6 lg:col-span-2 space-y-4">
+            <div>
+              <h3 className="font-semibold">Registrar Compra a Mayorista</h3>
+              <p className="text-xs text-gray-400">Ingreso directo de facturas (contado/crédito)</p>
+            </div>
+            <form onSubmit={handlePurchaseSubmit} className="space-y-4">
+              <Field label="Proveedor/Mayorista">
+                <Select
+                  value={purchaseForm.wholesaler}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, wholesaler: e.target.value })}
+                >
+                  <option>Pasifox</option>
+                  <option>Distribuidora Sur</option>
+                  <option>Mayorista Norte</option>
+                </Select>
+              </Field>
+
+              <Field label="Producto">
+                <Select
+                  value={purchaseForm.productId}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, productId: e.target.value })}
+                >
+                  {bottles.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Nro de Factura">
+                  <Input
+                    placeholder="Ej: FC-0001-23"
+                    value={purchaseForm.invoiceNumber}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, invoiceNumber: e.target.value })}
+                  />
+                </Field>
+                <Field label="Condición de Pago">
+                  <Select
+                    value={purchaseForm.paymentType}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, paymentType: e.target.value })}
+                  >
+                    <option value="contado">Contado</option>
+                    <option value="crédito">Crédito</option>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Cantidad">
+                  <Input
+                    type="number"
+                    min="1"
+                    required
+                    placeholder="Cantidad"
+                    value={purchaseForm.quantity}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })}
+                  />
+                </Field>
+                <Field label="Costo Unitario ($)">
+                  <Input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="Costo"
+                    value={purchaseForm.purchasePrice}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, purchasePrice: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Estado de Pago">
+                <Select
+                  value={purchaseForm.paymentStatus}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, paymentStatus: e.target.value })}
+                >
+                  <option value="pendiente">Pendiente de Pago</option>
+                  <option value="pagado">Pagado</option>
+                </Select>
+              </Field>
+
+              <Button type="submit" className="w-full">
+                Registrar e Ingresar Stock
+              </Button>
+            </form>
+          </Card>
+
+          {/* Historial Compras */}
+          <Card className="p-6 lg:col-span-3 space-y-4">
+            <h3 className="font-semibold">Historial de Compras</h3>
+            {purchases.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8 border border-white/5 rounded-xl bg-ink-850">
+                Aún no hay compras registradas en esta sesión.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {purchases.map((p) => {
+                  const item = p.items[0]; // Mostramos el primer item para simplificar UI
+                  const total = item ? item.quantity * item.purchasePrice : 0;
+                  return (
+                    <div key={p.id} className="rounded-xl border border-white/5 bg-ink-850 p-4 flex justify-between items-center">
+                      <div>
+                        <div className="font-medium text-gray-200">{p.wholesaler}</div>
+                        <div className="text-xs text-gray-500">
+                          Factura: {p.invoiceNumber} | Tipo: <span className="capitalize">{p.paymentType}</span>
+                        </div>
+                        <div className="text-sm text-gold-300 mt-1">
+                          {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-2">
+                        <div className="font-bold text-gray-200">{formatARS(total)}</div>
+                        <div className="flex gap-2 items-center">
+                          <Badge tone={p.paymentStatus === "pagado" ? "green" : "red"}>
+                            {p.paymentStatus === "pagado" ? "Pagado" : "Pendiente"}
+                          </Badge>
+                          {p.paymentStatus === "pendiente" && (
+                            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => markPurchaseAsPaid(p.id)}>
+                              Marcar Pago
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {subTab === "transferencias" && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Enviar Mercadería */}
+          <Card className="p-6 lg:col-span-2 space-y-4">
+            <div>
+              <h3 className="font-semibold">Despachar Traslado</h3>
+              <p className="text-xs text-gray-400">Envío pendiente de confirmación por receptor</p>
+            </div>
+            <form onSubmit={handleTransferSubmit} className="space-y-4">
+              <Field label="Producto">
+                <Select
+                  value={transferForm.productId}
+                  onChange={(e) => setTransferForm({ ...transferForm, productId: e.target.value })}
+                >
+                  {bottles.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Origen">
+                  <Select
+                    value={transferForm.originLocation}
+                    onChange={(e) => setTransferForm({ ...transferForm, originLocation: e.target.value })}
+                  >
+                    <option value="depósito">Depósito</option>
+                    <option value="barra">Barra</option>
+                  </Select>
+                </Field>
+                <Field label="Destino">
+                  <Select
+                    value={transferForm.destinationLocation}
+                    onChange={(e) => setTransferForm({ ...transferForm, destinationLocation: e.target.value })}
+                  >
+                    <option value="barra">Barra</option>
+                    <option value="depósito">Depósito</option>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="p-3 bg-white/5 rounded-xl border border-white/5 flex justify-between text-xs text-gray-400">
+                <div>Stock Origen: <span className="text-gray-200 font-semibold">{getStockQty(transferForm.productId, transferForm.originLocation)} u.</span></div>
+                <div>Stock Destino: <span className="text-gray-200 font-semibold">{getStockQty(transferForm.productId, transferForm.destinationLocation)} u.</span></div>
+              </div>
+
+              <Field label="Cantidad a Trasladar">
+                <Input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="Cantidad"
+                  value={transferForm.quantity}
+                  onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
+                />
+              </Field>
+
+              <Button type="submit" className="w-full">
+                Despachar Mercadería
+              </Button>
+            </form>
+          </Card>
+
+          {/* En tránsito / Historial */}
+          <Card className="p-6 lg:col-span-3 space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold">Envíos en Tránsito (Pendientes)</h3>
+              {transfers.filter((t) => t.status === "PENDING").length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4 border border-white/5 rounded-xl bg-ink-850">
+                  No hay envíos pendientes de recepción.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {transfers
+                    .filter((t) => t.status === "PENDING")
+                    .map((t) => {
+                      const item = t.items[0];
+                      return (
+                        <div key={t.id} className="rounded-xl border border-white/5 bg-ink-850 p-4 flex justify-between items-center">
+                          <div>
+                            <div className="font-medium text-gray-200 capitalize">
+                              {t.originLocation} ➔ {t.destinationLocation}
+                            </div>
+                            <div className="text-xs text-gray-500">Despachado por: {t.senderUserId}</div>
+                            <div className="text-sm text-gold-300 mt-1">
+                              {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                            </div>
+                          </div>
+                          <Button variant="success" className="px-3 py-1.5 text-xs shrink-0" onClick={() => receiveTransfer(t.id, "Carlos Medina")}>
+                            Confirmar Recepción
+                          </Button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4 border-t border-white/5 pt-4">
+              <h3 className="font-semibold text-gray-300">Historial de Traslados</h3>
+              {transfers.filter((t) => t.status === "CONFIRMED").length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Aún no hay traslados completados.</p>
+              ) : (
+                <div className="space-y-2">
+                  {transfers
+                    .filter((t) => t.status === "CONFIRMED")
+                    .map((t) => {
+                      const item = t.items[0];
+                      return (
+                        <div key={t.id} className="rounded-xl border border-white/5 bg-ink-900/50 p-3 flex justify-between items-center text-xs">
+                          <div>
+                            <span className="font-medium text-gray-300 capitalize">
+                              {t.originLocation} ➔ {t.destinationLocation}
+                            </span>
+                            <span className="mx-2 text-gray-600">|</span>
+                            <span className="text-gray-400">Recibió: {t.receiverUserId}</span>
+                            <div className="text-gold-400 mt-0.5">
+                              {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                            </div>
+                          </div>
+                          <Badge tone="green">Completado</Badge>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
