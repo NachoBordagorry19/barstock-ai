@@ -2,7 +2,8 @@ import { Product } from '../lib/domain/Product';
 import { Purchase } from '../lib/domain/Purchase';
 import { Transfer } from '../lib/domain/Transfer';
 import { User } from '../lib/domain/User';
-import { PurchaseDTO, TransferDTO } from '../lib/dtos/StockDTOs';
+import { StockItem } from '../lib/domain/StockItem';
+import { PurchaseDTO, TransferDTO, StockItemDTO } from '../lib/dtos/StockDTOs';
 import { StockService } from '../lib/services/StockService';
 
 describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => {
@@ -70,17 +71,21 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
       }),
     };
 
+    // Repositorio de Stocks maneja entidades de Dominio 'StockItem'
     mockStockRepository = {
       stocks: [
-        { productId: 'prod-1', location: 'depósito', quantity: 10 },
-        { productId: 'prod-1', location: 'barra', quantity: 2 },
+        new StockItem({ productId: 'prod-1', location: 'depósito', quantity: 10 }),
+        new StockItem({ productId: 'prod-1', location: 'barra', quantity: 2 }),
       ],
       getByProductAndLocation: jest.fn((productId, location) => {
         return mockStockRepository.stocks.find(
           s => s.productId === productId && s.location === location
-        ) || { productId, location, quantity: 0 };
+        ) || new StockItem({ productId, location, quantity: 0 });
       }),
       save: jest.fn((stock) => {
+        if (!(stock instanceof StockItem)) {
+          throw new Error('Debe ser instancia de StockItem en el Repositorio');
+        }
         const index = mockStockRepository.stocks.findIndex(
           s => s.productId === stock.productId && s.location === stock.location
         );
@@ -91,6 +96,7 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
         }
         return stock;
       }),
+      findAll: jest.fn(() => mockStockRepository.stocks),
     };
 
     // Repositorio de Transferencias maneja entidades de Dominio 'Transfer'
@@ -213,7 +219,7 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
         items: [{ productId: 'prod-1', quantity: 2 }],
         originLocation: 'depósito',
         destinationLocation: 'barra',
-        senderUserId: 'user-receptor' // Receptor NO tiene permisos de despacho
+        senderUserId: 'user-receptor'
       };
 
       expect(() => {
@@ -233,7 +239,7 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
       mockTransferRepository.transfers.push(pendingTransfer);
 
       expect(() => {
-        stockService.confirmTransfer('trans-99', 'user-despachador'); // Despachador NO tiene permisos de recepción
+        stockService.confirmTransfer('trans-99', 'user-despachador');
       }).toThrow(/Permiso denegado: El usuario no tiene rol de receptor/);
     });
 
@@ -242,14 +248,68 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
         items: [{ productId: 'prod-1', quantity: 1 }],
         originLocation: 'depósito',
         destinationLocation: 'barra',
-        senderUserId: 'user-admin' // ADMIN puede despachar
+        senderUserId: 'user-admin'
       };
 
       const transfer = stockService.dispatchTransfer(transferInput);
       expect(transfer.status).toBe('PENDING');
 
-      const confirmed = stockService.confirmTransfer(transfer.id, 'user-admin'); // ADMIN puede recibir
+      const confirmed = stockService.confirmTransfer(transfer.id, 'user-admin');
       expect(confirmed.status).toBe('CONFIRMED');
+    });
+  });
+
+  describe('StockService - Control de Fechas de Vencimiento', () => {
+    test('Debería guardar la fecha de vencimiento en el stock al registrar una compra', () => {
+      const purchaseInput = {
+        wholesaler: 'Pasifox',
+        invoiceNumber: 'FC-888',
+        paymentType: 'contado',
+        paymentStatus: 'pagado',
+        items: [
+          { productId: 'prod-1', quantity: 5, purchasePrice: 800, expirationDate: '2026-12-31' }
+        ]
+      };
+
+      stockService.registerPurchase(purchaseInput);
+
+      const stock = mockStockRepository.getByProductAndLocation('prod-1', 'depósito');
+      expect(stock.expirationDate).toBeDefined();
+      expect(stock.expirationDate.toISOString().split('T')[0]).toBe('2026-12-31');
+    });
+
+    test('Debería retornar la lista de productos vencidos', () => {
+      const today = new Date('2026-07-15');
+
+      mockStockRepository.stocks = [
+        new StockItem({ productId: 'prod-1', location: 'depósito', quantity: 5, expirationDate: '2026-07-01' }),
+        new StockItem({ productId: 'prod-2', location: 'barra', quantity: 10, expirationDate: '2026-08-30' })
+      ];
+
+      const expired = stockService.getExpiredItems(today);
+      expect(expired.length).toBe(1);
+      expect(expired[0].productId).toBe('prod-1');
+      expect(expired[0]).toBeInstanceOf(StockItemDTO);
+      expect(expired[0].isExpired).toBe(true);
+    });
+
+    test('Debería arrojar un error si se intenta trasladar un producto que ya venció', () => {
+      const today = new Date('2026-07-15');
+
+      mockStockRepository.stocks = [
+        new StockItem({ productId: 'prod-1', location: 'depósito', quantity: 5, expirationDate: '2026-07-01' })
+      ];
+
+      const transferInput = {
+        items: [{ productId: 'prod-1', quantity: 2 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-despachador'
+      };
+
+      expect(() => {
+        stockService.dispatchTransfer(transferInput, today);
+      }).toThrow(/No se puede trasladar mercadería vencida/);
     });
   });
 });
