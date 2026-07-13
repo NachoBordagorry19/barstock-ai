@@ -27,11 +27,11 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
       findById: jest.fn((id) => mockUserRepository.users.find(u => u.id === id)),
     };
 
-    // Repositorio de Productos maneja entidades de Dominio 'Product'
+    // Repositorio de Productos maneja entidades de Dominio 'Product' (con costo y margen)
     mockProductRepository = {
       products: [
-        new Product({ id: 'prod-1', name: 'Coca Cola 1L', stock: 10, price: 1200 }),
-        new Product({ id: 'prod-2', name: 'Fernet Branca 750ml', stock: 5, price: 14700 }),
+        new Product({ id: 'prod-1', name: 'Coca Cola 1L', stock: 10, price: 1200, cost: 1000, marginPercent: 20 }),
+        new Product({ id: 'prod-2', name: 'Fernet Branca 750ml', stock: 5, price: 14700, cost: 12250, marginPercent: 20 }),
       ],
       findById: jest.fn((id) => mockProductRepository.products.find(p => p.id === id)),
       save: jest.fn((product) => {
@@ -136,8 +136,8 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
       paymentType: 'crédito',
       paymentStatus: 'pendiente',
       items: [
-        { productId: 'prod-1', quantity: 20, purchasePrice: 800 },
-        { productId: 'prod-2', quantity: 10, purchasePrice: 11000 },
+        { productId: 'prod-1', quantity: 20, purchasePrice: 1000 },
+        { productId: 'prod-2', quantity: 10, purchasePrice: 12250 },
       ]
     };
 
@@ -310,6 +310,26 @@ describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => 
       expect(() => {
         stockService.dispatchTransfer(transferInput, today);
       }).toThrow(/No se puede trasladar mercadería vencida/);
+    });
+  });
+
+  describe('StockService - Margen de Precios y Ganancia', () => {
+    test('Debería actualizar el costo del producto y calcular el precio de venta con el margen del 20% al registrar compra', () => {
+      const purchaseInput = {
+        wholesaler: 'Pasifox',
+        invoiceNumber: 'FC-999',
+        paymentType: 'contado',
+        paymentStatus: 'pagado',
+        items: [
+          { productId: 'prod-1', quantity: 10, purchasePrice: 500 } // Costo anterior era 1000, nuevo costo es 500
+        ]
+      };
+
+      stockService.registerPurchase(purchaseInput);
+
+      const product = mockProductRepository.findById('prod-1');
+      expect(product.cost).toBe(500);
+      expect(product.price).toBe(600); // 500 * 1.20 = 600
     });
   });
 });
