@@ -1,18 +1,31 @@
 import { Product } from '../lib/domain/Product';
 import { Purchase } from '../lib/domain/Purchase';
 import { Transfer } from '../lib/domain/Transfer';
+import { User } from '../lib/domain/User';
 import { PurchaseDTO, TransferDTO } from '../lib/dtos/StockDTOs';
 import { StockService } from '../lib/services/StockService';
 
-describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)', () => {
+describe('StockService - Arquitectura Limpia con Roles de Usuario (TDD)', () => {
   let mockProductRepository;
   let mockPurchaseRepository;
   let mockMovementRepository;
   let mockStockRepository;
   let mockTransferRepository;
+  let mockUserRepository;
   let stockService;
 
   beforeEach(() => {
+    // Repositorio de Usuarios
+    mockUserRepository = {
+      users: [
+        new User({ id: 'user-admin', name: 'Admin Carlos', role: 'ADMIN' }),
+        new User({ id: 'user-despachador', name: 'Despachador Pedro', role: 'DESPACHADOR' }),
+        new User({ id: 'user-receptor', name: 'Receptor Gomez', role: 'RECEPTOR' }),
+        new User({ id: 'user-invalid', name: 'Usuario Invalido', role: 'OTRO' }),
+      ],
+      findById: jest.fn((id) => mockUserRepository.users.find(u => u.id === id)),
+    };
+
     // Repositorio de Productos maneja entidades de Dominio 'Product'
     mockProductRepository = {
       products: [
@@ -21,7 +34,6 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
       ],
       findById: jest.fn((id) => mockProductRepository.products.find(p => p.id === id)),
       save: jest.fn((product) => {
-        // Validamos que se guarde una entidad de Dominio, no un DTO
         if (!(product instanceof Product)) {
           throw new Error('Debe ser instancia de Product en el Repositorio');
         }
@@ -100,18 +112,18 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
       findById: jest.fn((id) => mockTransferRepository.transfers.find(t => t.id === id)),
     };
 
-    // Inyección de dependencias
+    // Inyección de dependencias (ahora con mockUserRepository)
     stockService = new StockService(
       mockProductRepository,
       mockPurchaseRepository,
       mockMovementRepository,
       mockStockRepository,
-      mockTransferRepository
+      mockTransferRepository,
+      mockUserRepository
     );
   });
 
   test('Debería mapear DTO a Entidad de Dominio en Compra, guardarla en repositorio y retornar PurchaseDTO a la UI', () => {
-    // La UI envía datos planos (DTO de entrada implícito)
     const purchaseInput = {
       wholesaler: 'Pasifox',
       invoiceNumber: 'FC-0001-00002345',
@@ -125,28 +137,25 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
 
     const resultDTO = stockService.registerPurchase(purchaseInput);
 
-    // 1. El servicio debe retornar un PurchaseDTO
     expect(resultDTO).toBeInstanceOf(PurchaseDTO);
     expect(resultDTO.wholesaler).toBe('Pasifox');
     expect(resultDTO.invoiceNumber).toBe('FC-0001-00002345');
 
-    // 2. El repositorio debe haber recibido una instancia de Purchase
     expect(mockPurchaseRepository.save).toHaveBeenCalled();
     const savedArg = mockPurchaseRepository.save.mock.calls[0][0];
     expect(savedArg).toBeInstanceOf(Purchase);
 
-    // 3. El stock de Coca (10 + 20 = 30) y Fernet (5 + 10 = 15) debe actualizarse usando métodos de Dominio
     const updatedCoca = mockProductRepository.products.find(p => p.id === 'prod-1');
     expect(updatedCoca.stock).toBe(30);
   });
 
   test('Debería manejar el ciclo de vida del traslado mediante Transfer (Dominio) y retornar TransferDTO', () => {
-    // 1. DESPACHAR
+    // 1. DESPACHAR (con un usuario despachador válido)
     const transferInput = {
       items: [{ productId: 'prod-1', quantity: 5 }],
       originLocation: 'depósito',
       destinationLocation: 'barra',
-      senderUserId: 'user-envia'
+      senderUserId: 'user-despachador'
     };
 
     const dispatchedDTO = stockService.dispatchTransfer(transferInput);
@@ -157,12 +166,12 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
     const savedTransferInRepo = mockTransferRepository.transfers[0];
     expect(savedTransferInRepo).toBeInstanceOf(Transfer);
 
-    // 2. CONFIRMAR
-    const confirmedDTO = stockService.confirmTransfer(dispatchedDTO.id, 'user-recibe');
+    // 2. CONFIRMAR (con un usuario receptor válido)
+    const confirmedDTO = stockService.confirmTransfer(dispatchedDTO.id, 'user-receptor');
 
     expect(confirmedDTO).toBeInstanceOf(TransferDTO);
     expect(confirmedDTO.status).toBe('CONFIRMED');
-    expect(confirmedDTO.receiverUserId).toBe('user-recibe');
+    expect(confirmedDTO.receiverUserId).toBe('user-receptor');
 
     expect(mockTransferRepository.transfers[0].status).toBe('CONFIRMED');
   });
@@ -170,12 +179,12 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
   describe('StockService - Validación de Inputs (Fluent API)', () => {
     test('Debería arrojar error de validación si el proveedor está vacío o la cantidad de ítems es menor o igual a cero', () => {
       const invalidPurchase = {
-        wholesaler: '', // Inválido (vacío)
+        wholesaler: '',
         invoiceNumber: 'FC-123',
         paymentType: 'crédito',
         paymentStatus: 'pendiente',
         items: [
-          { productId: 'prod-1', quantity: 0, purchasePrice: 100 } // Inválido (cero o menor)
+          { productId: 'prod-1', quantity: 0, purchasePrice: 100 }
         ]
       };
 
@@ -186,15 +195,61 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
 
     test('Debería arrojar error de validación si se intenta trasbordar mercadería con cantidad negativa', () => {
       const invalidTransfer = {
-        items: [{ productId: 'prod-1', quantity: -10 }], // Inválido
+        items: [{ productId: 'prod-1', quantity: -10 }],
         originLocation: 'depósito',
         destinationLocation: 'barra',
-        senderUserId: 'user-envia'
+        senderUserId: 'user-despachador'
       };
 
       expect(() => {
         stockService.dispatchTransfer(invalidTransfer);
       }).toThrow(/Validación fallida/);
+    });
+  });
+
+  describe('StockService - Control de Perfiles de Usuario (Seguridad)', () => {
+    test('Debería denegar el despacho de mercadería si el usuario no tiene rol de despachador o administrador', () => {
+      const transferInput = {
+        items: [{ productId: 'prod-1', quantity: 2 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-receptor' // Receptor NO tiene permisos de despacho
+      };
+
+      expect(() => {
+        stockService.dispatchTransfer(transferInput);
+      }).toThrow(/Permiso denegado: El usuario no tiene rol de despachador/);
+    });
+
+    test('Debería denegar la confirmación de mercadería si el usuario no tiene rol de receptor o administrador', () => {
+      const pendingTransfer = new Transfer({
+        id: 'trans-99',
+        items: [{ productId: 'prod-1', quantity: 2 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-despachador',
+        status: 'PENDING',
+      });
+      mockTransferRepository.transfers.push(pendingTransfer);
+
+      expect(() => {
+        stockService.confirmTransfer('trans-99', 'user-despachador'); // Despachador NO tiene permisos de recepción
+      }).toThrow(/Permiso denegado: El usuario no tiene rol de receptor/);
+    });
+
+    test('Debería permitir el despacho y confirmación a usuarios con rol de ADMIN', () => {
+      const transferInput = {
+        items: [{ productId: 'prod-1', quantity: 1 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-admin' // ADMIN puede despachar
+      };
+
+      const transfer = stockService.dispatchTransfer(transferInput);
+      expect(transfer.status).toBe('PENDING');
+
+      const confirmed = stockService.confirmTransfer(transfer.id, 'user-admin'); // ADMIN puede recibir
+      expect(confirmed.status).toBe('CONFIRMED');
     });
   });
 });
