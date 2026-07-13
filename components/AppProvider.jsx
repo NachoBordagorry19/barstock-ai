@@ -9,6 +9,9 @@ import {
   uid,
 } from "@/lib/mockData";
 import { StockService } from "@/lib/services/StockService";
+import { Product } from "@/lib/domain/Product";
+import { Purchase } from "@/lib/domain/Purchase";
+import { Transfer } from "@/lib/domain/Transfer";
 
 const AppCtx = createContext(null);
 
@@ -107,20 +110,27 @@ export function AppProvider({ children }) {
 
   // --- Implementación de Repositorios para conectar StockService con React State ---
   const productRepository = useMemo(() => ({
-    findById: (id) => bottles.find(b => b.id === id),
+    findById: (id) => {
+      const b = bottles.find(x => x.id === id);
+      return b ? new Product(b) : null;
+    },
     save: (updatedProduct) => {
-      setBottles(prev => prev.map(b => b.id === updatedProduct.id ? updatedProduct : b));
+      const plain = { ...updatedProduct };
+      setBottles(prev => prev.map(b => b.id === plain.id ? plain : b));
       return updatedProduct;
     }
   }), [bottles]);
 
   const purchaseRepository = useMemo(() => ({
     save: (purchase) => {
-      const newPurchase = { ...purchase, id: purchase.id || `purch-${Date.now()}` };
+      const newPurchase = {
+        ...purchase,
+        id: purchase.id || `purch-${Date.now()}`
+      };
       setPurchases(prev => [newPurchase, ...prev]);
-      return newPurchase;
+      return new Purchase(newPurchase);
     },
-    findAll: () => purchases,
+    findAll: () => purchases.map(p => new Purchase(p)),
   }), [purchases]);
 
   const movementRepository = useMemo(() => ({
@@ -159,9 +169,15 @@ export function AppProvider({ children }) {
   }), [stocks]);
 
   const transferRepository = useMemo(() => ({
-    findById: (id) => transfers.find(t => t.id === id),
+    findById: (id) => {
+      const t = transfers.find(x => x.id === id);
+      return t ? new Transfer(t) : null;
+    },
     save: (transfer) => {
-      const newTransfer = { ...transfer, id: transfer.id || `trans-${Date.now()}` };
+      const newTransfer = {
+        ...transfer,
+        id: transfer.id || `trans-${Date.now()}`
+      };
       setTransfers(prev => {
         const idx = prev.findIndex(t => t.id === newTransfer.id);
         if (idx !== -1) {
@@ -171,7 +187,7 @@ export function AppProvider({ children }) {
         }
         return [newTransfer, ...prev];
       });
-      return newTransfer;
+      return new Transfer(newTransfer);
     }
   }), [transfers]);
 
