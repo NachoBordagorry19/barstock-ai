@@ -166,4 +166,35 @@ describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)
 
     expect(mockTransferRepository.transfers[0].status).toBe('CONFIRMED');
   });
+
+  describe('StockService - Validación de Inputs (Fluent API)', () => {
+    test('Debería arrojar error de validación si el proveedor está vacío o la cantidad de ítems es menor o igual a cero', () => {
+      const invalidPurchase = {
+        wholesaler: '', // Inválido (vacío)
+        invoiceNumber: 'FC-123',
+        paymentType: 'crédito',
+        paymentStatus: 'pendiente',
+        items: [
+          { productId: 'prod-1', quantity: 0, purchasePrice: 100 } // Inválido (cero o menor)
+        ]
+      };
+
+      expect(() => {
+        stockService.registerPurchase(invalidPurchase);
+      }).toThrow(/Validación fallida/);
+    });
+
+    test('Debería arrojar error de validación si se intenta trasbordar mercadería con cantidad negativa', () => {
+      const invalidTransfer = {
+        items: [{ productId: 'prod-1', quantity: -10 }], // Inválido
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-envia'
+      };
+
+      expect(() => {
+        stockService.dispatchTransfer(invalidTransfer);
+      }).toThrow(/Validación fallida/);
+    });
+  });
 });
