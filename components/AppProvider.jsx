@@ -191,6 +191,23 @@ export function AppProvider({ children }) {
     }
   }), [transfers]);
 
+  const userRepository = useMemo(() => ({
+    findById: (id) => {
+      if (id === "Carlos Medina" || id === "a1" || id === "CM") {
+        return new User({ id: "a1", name: "Carlos Medina", role: "ADMIN", active: true });
+      }
+      
+      const u = scannerUsers.find(x => x.id === id || x.name === id);
+      if (u) {
+        let role = "RECEPTOR";
+        if (u.id === "s1" || u.id === "s4") role = "DESPACHADOR";
+        return new User({ id: u.id, name: u.name, role: role, active: u.active });
+      }
+
+      return new User({ id, name: id, role: "ADMIN", active: true });
+    }
+  }), [scannerUsers]);
+
   // Instanciar StockService con los repositorios que manejan el estado de React (SOLID & DRY)
   const stockService = useMemo(() => {
     return new StockService(
@@ -198,9 +215,10 @@ export function AppProvider({ children }) {
       purchaseRepository,
       movementRepository,
       stockRepository,
-      transferRepository
+      transferRepository,
+      userRepository
     );
-  }, [productRepository, purchaseRepository, movementRepository, stockRepository, transferRepository]);
+  }, [productRepository, purchaseRepository, movementRepository, stockRepository, transferRepository, userRepository]);
 
   // Acciones expuestas a la interfaz
   const addPurchase = useCallback((purchaseData) => {

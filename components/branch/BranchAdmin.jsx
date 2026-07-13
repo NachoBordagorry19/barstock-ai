@@ -501,6 +501,7 @@ function Logistica() {
   } = useApp();
 
   const [subTab, setSubTab] = useState("compras");
+  const [simulatedUser, setSimulatedUser] = useState("Carlos Medina");
 
   // Formulario Compras
   const [purchaseForm, setPurchaseForm] = useState({
@@ -561,7 +562,7 @@ function Logistica() {
         ],
         originLocation: transferForm.originLocation,
         destinationLocation: transferForm.destinationLocation,
-        senderUserId: "Carlos Medina", // Usuario actual logueado simulado
+        senderUserId: simulatedUser, // Usuario actual logueado simulado
       });
       setTransferForm((prev) => ({ ...prev, quantity: "" }));
     } catch (err) {
@@ -580,6 +581,22 @@ function Logistica() {
 
   return (
     <div className="space-y-6">
+      {/* Selector de Usuario Simulado para Roles y Seguridad */}
+      <Card className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gold-500/20 bg-gold-500/5">
+        <div>
+          <h4 className="font-semibold text-gold-300">Simulador de Usuario y Roles</h4>
+          <p className="text-xs text-gray-400">Elegí qué usuario realiza las acciones en la UI para probar el control de acceso (SOLID/Domain).</p>
+        </div>
+        <div className="w-full md:w-80">
+          <Select value={simulatedUser} onChange={(e) => setSimulatedUser(e.target.value)}>
+            <option value="Carlos Medina">Carlos Medina (ADMIN)</option>
+            <option value="Martín Gómez">Martín Gómez (DESPACHADOR)</option>
+            <option value="Lucía Fernández">Lucía Fernández (RECEPTOR)</option>
+            <option value="Diego Sosa">Diego Sosa (RECEPTOR - INACTIVO)</option>
+          </Select>
+        </div>
+      </Card>
+
       <div className="flex gap-2">
         <Button variant={subTab === "compras" ? "primary" : "ghost"} onClick={() => setSubTab("compras")}>
           Compras y Facturas
@@ -815,7 +832,13 @@ function Logistica() {
                               {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
                             </div>
                           </div>
-                          <Button variant="success" className="px-3 py-1.5 text-xs shrink-0" onClick={() => receiveTransfer(t.id, "Carlos Medina")}>
+                          <Button variant="success" className="px-3 py-1.5 text-xs shrink-0" onClick={() => {
+                            try {
+                              receiveTransfer(t.id, simulatedUser);
+                            } catch (err) {
+                              alert(err.message);
+                            }
+                          }}>
                             Confirmar Recepción
                           </Button>
                         </div>
