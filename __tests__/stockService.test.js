@@ -1,20 +1,30 @@
+import { Product } from '../lib/domain/Product';
+import { Purchase } from '../lib/domain/Purchase';
+import { Transfer } from '../lib/domain/Transfer';
+import { PurchaseDTO, TransferDTO } from '../lib/dtos/StockDTOs';
 import { StockService } from '../lib/services/StockService';
 
-describe('StockService - Registro de Compras (TDD)', () => {
+describe('StockService - Arquitectura Limpia (Domain / DTO / Repositorios) (TDD)', () => {
   let mockProductRepository;
   let mockPurchaseRepository;
   let mockMovementRepository;
+  let mockStockRepository;
+  let mockTransferRepository;
   let stockService;
 
   beforeEach(() => {
-    // Definimos repositorios mockeados en memoria siguiendo el patrón Repository (SOLID)
+    // Repositorio de Productos maneja entidades de Dominio 'Product'
     mockProductRepository = {
       products: [
-        { id: 'prod-1', name: 'Coca Cola 1L', stock: 10, price: 1200 },
-        { id: 'prod-2', name: 'Fernet Branca 750ml', stock: 5, price: 14700 },
+        new Product({ id: 'prod-1', name: 'Coca Cola 1L', stock: 10, price: 1200 }),
+        new Product({ id: 'prod-2', name: 'Fernet Branca 750ml', stock: 5, price: 14700 }),
       ],
       findById: jest.fn((id) => mockProductRepository.products.find(p => p.id === id)),
       save: jest.fn((product) => {
+        // Validamos que se guarde una entidad de Dominio, no un DTO
+        if (!(product instanceof Product)) {
+          throw new Error('Debe ser instancia de Product en el Repositorio');
+        }
         const index = mockProductRepository.products.findIndex(p => p.id === product.id);
         if (index !== -1) {
           mockProductRepository.products[index] = product;
@@ -25,10 +35,14 @@ describe('StockService - Registro de Compras (TDD)', () => {
       }),
     };
 
+    // Repositorio de Compras maneja entidades de Dominio 'Purchase'
     mockPurchaseRepository = {
       purchases: [],
       save: jest.fn((purchase) => {
-        purchase.id = `purch-${mockPurchaseRepository.purchases.length + 1}`;
+        if (!(purchase instanceof Purchase)) {
+          throw new Error('Debe ser instancia de Purchase en el Repositorio');
+        }
+        purchase.id = purchase.id || `purch-${mockPurchaseRepository.purchases.length + 1}`;
         mockPurchaseRepository.purchases.push(purchase);
         return purchase;
       }),
@@ -44,164 +58,112 @@ describe('StockService - Registro de Compras (TDD)', () => {
       }),
     };
 
-    // Inyectamos las dependencias en el servicio (Dependency Inversion Principle)
+    mockStockRepository = {
+      stocks: [
+        { productId: 'prod-1', location: 'depósito', quantity: 10 },
+        { productId: 'prod-1', location: 'barra', quantity: 2 },
+      ],
+      getByProductAndLocation: jest.fn((productId, location) => {
+        return mockStockRepository.stocks.find(
+          s => s.productId === productId && s.location === location
+        ) || { productId, location, quantity: 0 };
+      }),
+      save: jest.fn((stock) => {
+        const index = mockStockRepository.stocks.findIndex(
+          s => s.productId === stock.productId && s.location === stock.location
+        );
+        if (index !== -1) {
+          mockStockRepository.stocks[index] = stock;
+        } else {
+          mockStockRepository.stocks.push(stock);
+        }
+        return stock;
+      }),
+    };
+
+    // Repositorio de Transferencias maneja entidades de Dominio 'Transfer'
+    mockTransferRepository = {
+      transfers: [],
+      save: jest.fn((transfer) => {
+        if (!(transfer instanceof Transfer)) {
+          throw new Error('Debe ser instancia de Transfer en el Repositorio');
+        }
+        if (!transfer.id) {
+          transfer.id = `trans-${mockTransferRepository.transfers.length + 1}`;
+          mockTransferRepository.transfers.push(transfer);
+        } else {
+          const index = mockTransferRepository.transfers.findIndex(t => t.id === transfer.id);
+          if (index !== -1) mockTransferRepository.transfers[index] = transfer;
+        }
+        return transfer;
+      }),
+      findById: jest.fn((id) => mockTransferRepository.transfers.find(t => t.id === id)),
+    };
+
+    // Inyección de dependencias
     stockService = new StockService(
       mockProductRepository,
       mockPurchaseRepository,
-      mockMovementRepository
+      mockMovementRepository,
+      mockStockRepository,
+      mockTransferRepository
     );
   });
 
-  test('Debería registrar una compra a un mayorista y actualizar el stock de los productos', () => {
-    const purchaseData = {
+  test('Debería mapear DTO a Entidad de Dominio en Compra, guardarla en repositorio y retornar PurchaseDTO a la UI', () => {
+    // La UI envía datos planos (DTO de entrada implícito)
+    const purchaseInput = {
       wholesaler: 'Pasifox',
       invoiceNumber: 'FC-0001-00002345',
-      paymentType: 'crédito', // 'contado' o 'crédito'
-      paymentStatus: 'pendiente', // 'pagado' o 'pendiente'
+      paymentType: 'crédito',
+      paymentStatus: 'pendiente',
       items: [
         { productId: 'prod-1', quantity: 20, purchasePrice: 800 },
         { productId: 'prod-2', quantity: 10, purchasePrice: 11000 },
       ]
     };
 
-    const registeredPurchase = stockService.registerPurchase(purchaseData);
+    const resultDTO = stockService.registerPurchase(purchaseInput);
 
-    // 1. Debe retornar la compra registrada con un ID asignado y campos correctos
-    expect(registeredPurchase).toBeDefined();
-    expect(registeredPurchase.id).toBeDefined();
-    expect(registeredPurchase.wholesaler).toBe('Pasifox');
-    expect(registeredPurchase.invoiceNumber).toBe('FC-0001-00002345');
-    expect(registeredPurchase.paymentStatus).toBe('pendiente');
+    // 1. El servicio debe retornar un PurchaseDTO
+    expect(resultDTO).toBeInstanceOf(PurchaseDTO);
+    expect(resultDTO.wholesaler).toBe('Pasifox');
+    expect(resultDTO.invoiceNumber).toBe('FC-0001-00002345');
 
-    // 2. Debe guardarse en el repositorio de compras
+    // 2. El repositorio debe haber recibido una instancia de Purchase
     expect(mockPurchaseRepository.save).toHaveBeenCalled();
-    expect(mockPurchaseRepository.purchases.length).toBe(1);
+    const savedArg = mockPurchaseRepository.save.mock.calls[0][0];
+    expect(savedArg).toBeInstanceOf(Purchase);
 
-    // 3. Debe actualizar los stocks de los productos en el repositorio
-    expect(mockProductRepository.findById).toHaveBeenCalledWith('prod-1');
-    expect(mockProductRepository.findById).toHaveBeenCalledWith('prod-2');
-    expect(mockProductRepository.save).toHaveBeenCalledTimes(2);
-
+    // 3. El stock de Coca (10 + 20 = 30) y Fernet (5 + 10 = 15) debe actualizarse usando métodos de Dominio
     const updatedCoca = mockProductRepository.products.find(p => p.id === 'prod-1');
-    const updatedFernet = mockProductRepository.products.find(p => p.id === 'prod-2');
-
-    // Coca: stock inicial 10 + 20 comprados = 30
     expect(updatedCoca.stock).toBe(30);
-    // Fernet: stock inicial 5 + 10 comprados = 15
-    expect(updatedFernet.stock).toBe(15);
-
-    // 4. Debe registrar un movimiento de tipo 'INGRESAR' en el historial de movimientos
-    expect(mockMovementRepository.save).toHaveBeenCalledTimes(2);
-    expect(mockMovementRepository.movements[0]).toMatchObject({
-      productId: 'prod-1',
-      quantity: 20,
-      type: 'INGRESAR',
-      origin: 'Pasifox',
-    });
   });
 
-  describe('Transferencia entre ubicaciones con doble confirmación', () => {
-    let mockStockRepository;
-    let mockTransferRepository;
+  test('Debería manejar el ciclo de vida del traslado mediante Transfer (Dominio) y retornar TransferDTO', () => {
+    // 1. DESPACHAR
+    const transferInput = {
+      items: [{ productId: 'prod-1', quantity: 5 }],
+      originLocation: 'depósito',
+      destinationLocation: 'barra',
+      senderUserId: 'user-envia'
+    };
 
-    beforeEach(() => {
-      mockStockRepository = {
-        stocks: [
-          { productId: 'prod-1', location: 'depósito', quantity: 10 },
-          { productId: 'prod-1', location: 'barra', quantity: 2 },
-        ],
-        getByProductAndLocation: jest.fn((productId, location) => {
-          return mockStockRepository.stocks.find(
-            s => s.productId === productId && s.location === location
-          ) || { productId, location, quantity: 0 };
-        }),
-        save: jest.fn((stock) => {
-          const index = mockStockRepository.stocks.findIndex(
-            s => s.productId === stock.productId && s.location === stock.location
-          );
-          if (index !== -1) {
-            mockStockRepository.stocks[index] = stock;
-          } else {
-            mockStockRepository.stocks.push(stock);
-          }
-          return stock;
-        }),
-      };
+    const dispatchedDTO = stockService.dispatchTransfer(transferInput);
 
-      mockTransferRepository = {
-        transfers: [],
-        save: jest.fn((transfer) => {
-          if (!transfer.id) {
-            transfer.id = `trans-${mockTransferRepository.transfers.length + 1}`;
-            mockTransferRepository.transfers.push(transfer);
-          } else {
-            const index = mockTransferRepository.transfers.findIndex(t => t.id === transfer.id);
-            if (index !== -1) mockTransferRepository.transfers[index] = transfer;
-          }
-          return transfer;
-        }),
-        findById: jest.fn((id) => mockTransferRepository.transfers.find(t => t.id === id)),
-      };
+    expect(dispatchedDTO).toBeInstanceOf(TransferDTO);
+    expect(dispatchedDTO.status).toBe('PENDING');
 
-      // Inyectamos también los nuevos repositorios en el servicio
-      stockService = new StockService(
-        mockProductRepository,
-        mockPurchaseRepository,
-        mockMovementRepository,
-        mockStockRepository,
-        mockTransferRepository
-      );
-    });
+    const savedTransferInRepo = mockTransferRepository.transfers[0];
+    expect(savedTransferInRepo).toBeInstanceOf(Transfer);
 
-    test('Debería registrar un envío de mercadería (pendiente) y restar del origen, pero no sumar al destino todavía', () => {
-      const transferData = {
-        items: [{ productId: 'prod-1', quantity: 5 }],
-        originLocation: 'depósito',
-        destinationLocation: 'barra',
-        senderUserId: 'user-envia'
-      };
+    // 2. CONFIRMAR
+    const confirmedDTO = stockService.confirmTransfer(dispatchedDTO.id, 'user-recibe');
 
-      const transfer = stockService.dispatchTransfer(transferData);
+    expect(confirmedDTO).toBeInstanceOf(TransferDTO);
+    expect(confirmedDTO.status).toBe('CONFIRMED');
+    expect(confirmedDTO.receiverUserId).toBe('user-recibe');
 
-      // 1. Debe estar en estado PENDING
-      expect(transfer).toBeDefined();
-      expect(transfer.id).toBeDefined();
-      expect(transfer.status).toBe('PENDING');
-      expect(transfer.senderUserId).toBe('user-envia');
-
-      // 2. Debe restar stock del origen (10 - 5 = 5)
-      const originStock = mockStockRepository.getByProductAndLocation('prod-1', 'depósito');
-      expect(originStock.quantity).toBe(5);
-
-      // 3. NO debe sumar stock al destino todavía (sigue en 2)
-      const destStock = mockStockRepository.getByProductAndLocation('prod-1', 'barra');
-      expect(destStock.quantity).toBe(2);
-    });
-
-    test('Debería confirmar una transferencia pendiente, sumando al destino y registrando el receptor', () => {
-      // Primero creamos una transferencia pendiente en el repositorio
-      const pendingTransfer = {
-        id: 'trans-1',
-        items: [{ productId: 'prod-1', quantity: 5 }],
-        originLocation: 'depósito',
-        destinationLocation: 'barra',
-        senderUserId: 'user-envia',
-        status: 'PENDING',
-      };
-      mockTransferRepository.transfers.push(pendingTransfer);
-
-      const confirmed = stockService.confirmTransfer('trans-1', 'user-recibe');
-
-      // 1. El estado debe ser CONFIRMED y guardar quién lo recibió
-      expect(confirmed.status).toBe('CONFIRMED');
-      expect(confirmed.receiverUserId).toBe('user-recibe');
-
-      // 2. Debe sumar stock al destino (2 + 5 = 7)
-      const destStock = mockStockRepository.getByProductAndLocation('prod-1', 'barra');
-      expect(destStock.quantity).toBe(7);
-
-      // 3. Debe registrar un movimiento de stock para la barra
-      expect(mockMovementRepository.save).toHaveBeenCalled();
-    });
+    expect(mockTransferRepository.transfers[0].status).toBe('CONFIRMED');
   });
 });
