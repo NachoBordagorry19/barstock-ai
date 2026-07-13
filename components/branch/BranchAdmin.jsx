@@ -10,6 +10,7 @@ import { exportToExcel } from "@/lib/exportExcel";
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "inventario", label: "Inventario" },
+  { id: "logistica", label: "Logística y Compras" },
   { id: "alertas", label: "Alertas" },
   { id: "empleados", label: "Empleados" },
   { id: "reportes", label: "Reportes" },
@@ -22,6 +23,7 @@ export default function BranchAdmin() {
     <Shell roleLabel="Admin de Sucursal · Palermo Soho" tabs={TABS} active={tab} onTab={setTab}>
       {tab === "dashboard" && <Dashboard onGo={setTab} />}
       {tab === "inventario" && <Inventario />}
+      {tab === "logistica" && <Logistica />}
       {tab === "alertas" && <Alertas />}
       {tab === "empleados" && <Empleados />}
       {tab === "reportes" && <Reportes />}
@@ -212,7 +214,13 @@ function Inventario() {
                       <Badge tone="gold">{b.category}</Badge>
                       {b.sealed <= b.threshold && <Badge tone="red">Bajo</Badge>}
                     </div>
-                    <div className="mt-1 font-mono text-xs text-gray-500">cod: {b.barcode || "—"}</div>
+                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                      <span>cod: {b.barcode || "—"}</span>
+                      <span>•</span>
+                      <span className="text-emerald-400">Venta: {formatARS(b.price)}</span>
+                      <span>•</span>
+                      <span>Costo: {formatARS(b.cost !== undefined ? b.cost : Math.round(b.price / 1.20))} ({b.marginPercent !== undefined ? b.marginPercent : 20}%)</span>
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-4 text-center text-xs">
                     <Counter label="Cerr." value={b.sealed} tone="gold" />
@@ -264,6 +272,25 @@ function EditRow({ bottle, onCancel, onSave, categories }) {
         <Field label="Vacías"><Input type="number" min="0" value={f.empty} onChange={(e) => setF({ ...f, empty: Number(e.target.value) })} /></Field>
         <Field label="Mínimo"><Input type="number" min="0" value={f.threshold} onChange={(e) => setF({ ...f, threshold: Number(e.target.value) })} /></Field>
       </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Costo de compra ($)">
+          <Input type="number" min="0" value={f.cost !== undefined ? f.cost : Math.round(f.price / 1.20)} onChange={(e) => {
+            const costVal = Number(e.target.value);
+            const marginVal = f.marginPercent !== undefined ? f.marginPercent : 20;
+            setF({ ...f, cost: costVal, price: Math.round(costVal * (1 + marginVal / 100)) });
+          }} />
+        </Field>
+        <Field label="Margen (%)">
+          <Input type="number" min="0" value={f.marginPercent !== undefined ? f.marginPercent : 20} onChange={(e) => {
+            const marginVal = Number(e.target.value);
+            const costVal = f.cost !== undefined ? f.cost : Math.round(f.price / 1.20);
+            setF({ ...f, marginPercent: marginVal, price: Math.round(costVal * (1 + marginVal / 100)) });
+          }} />
+        </Field>
+        <Field label="Precio de venta ($)">
+          <Input type="number" min="0" value={f.price} onChange={(e) => setF({ ...f, price: Number(e.target.value) })} />
+        </Field>
+      </div>
       <div className="flex gap-2">
         <Button onClick={() => onSave(f)}>Guardar cambios</Button>
         <Button variant="ghost" onClick={onCancel}>Cancelar</Button>
@@ -273,51 +300,104 @@ function EditRow({ bottle, onCancel, onSave, categories }) {
 }
 
 function Alertas() {
-  const { bottles } = useApp();
+  const { bottles, getExpiredItems, getNearExpirationItems } = useApp();
   const low = lowStock(bottles);
   const suggestion = (b) => Math.max(b.threshold * 2 - b.sealed, 1);
 
-  return (
-    <Card className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold">Alertas de reposición</h3>
-          <p className="text-sm text-gray-400">Productos que alcanzaron o bajaron del stock mínimo.</p>
-        </div>
-        <Badge tone={low.length ? "red" : "green"}>{low.length} alertas</Badge>
-      </div>
+  // Consultar vencimientos con fecha simulada (13 de Julio de 2026)
+  const simulatedDate = new Date("2026-07-13");
+  const expired = getExpiredItems(simulatedDate);
+  const nearExp = getNearExpirationItems(simulatedDate, 30);
 
-      {low.length === 0 ? (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
-          Todo en orden: ningún producto está por debajo del mínimo.
+  const getProdName = (id) => bottles.find((b) => b.id === id)?.name || "Desconocido";
+
+  return (
+    <div className="space-y-6">
+      {/* Alertas de reposición */}
+      <Card className="p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">Alertas de reposición</h3>
+            <p className="text-sm text-gray-400">Productos que alcanzaron o bajaron del stock mínimo.</p>
+          </div>
+          <Badge tone={low.length ? "red" : "green"}>{low.length} alertas</Badge>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="py-3 pr-4">Producto</th>
-                <th className="py-3 pr-4">Cerradas</th>
-                <th className="py-3 pr-4">Mínimo</th>
-                <th className="py-3 pr-4">Sugerido a comprar</th>
-                <th className="py-3">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {low.map((b) => (
-                <tr key={b.id} className="border-b border-white/5 last:border-0">
-                  <td className="py-3 pr-4 font-medium text-gray-200">{b.name}</td>
-                  <td className="py-3 pr-4 text-gray-400">{b.sealed}</td>
-                  <td className="py-3 pr-4 text-gray-400">{b.threshold}</td>
-                  <td className="py-3 pr-4"><span className="font-semibold gold-text">{suggestion(b)} u.</span></td>
-                  <td className="py-3"><Badge tone={b.sealed === 0 ? "red" : "amber"}>{b.sealed === 0 ? "Sin stock" : "Stock bajo"}</Badge></td>
+
+        {low.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
+            Todo en orden: ningún producto está por debajo del mínimo.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <th className="py-3 pr-4">Producto</th>
+                  <th className="py-3 pr-4">Cerradas</th>
+                  <th className="py-3 pr-4">Mínimo</th>
+                  <th className="py-3 pr-4">Sugerido a comprar</th>
+                  <th className="py-3">Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {low.map((b) => (
+                  <tr key={b.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-3 pr-4 font-medium text-gray-200">{b.name}</td>
+                    <td className="py-3 pr-4 text-gray-400">{b.sealed}</td>
+                    <td className="py-3 pr-4 text-gray-400">{b.threshold}</td>
+                    <td className="py-3 pr-4"><span className="font-semibold gold-text">{suggestion(b)} u.</span></td>
+                    <td className="py-3"><Badge tone={b.sealed === 0 ? "red" : "amber"}>{b.sealed === 0 ? "Sin stock" : "Stock bajo"}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Alertas de Vencimiento */}
+      <Card className="p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">Control de Fechas de Vencimiento</h3>
+            <p className="text-sm text-gray-400">Productos vencidos o próximos a vencer en los próximos 30 días.</p>
+          </div>
+          <Badge tone={expired.length ? "red" : nearExp.length ? "amber" : "green"}>
+            {expired.length + nearExp.length} alertas
+          </Badge>
         </div>
-      )}
-    </Card>
+
+        {expired.length === 0 && nearExp.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center text-emerald-300">
+            Excelente: no hay mercadería vencida ni próxima a vencer.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {expired.map((s, idx) => (
+              <div key={`exp-${idx}`} className="flex items-center justify-between rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-red-300">{getProdName(s.productId)}</div>
+                  <div className="text-xs text-gray-400 capitalize">Ubicación: {s.location} | Cantidad: {s.quantity} u.</div>
+                  <div className="text-xs text-red-400 mt-1 font-mono">Venció el: {s.expirationDate}</div>
+                </div>
+                <Badge tone="red">Vencido</Badge>
+              </div>
+            ))}
+
+            {nearExp.map((s, idx) => (
+              <div key={`near-${idx}`} className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-amber-300">{getProdName(s.productId)}</div>
+                  <div className="text-xs text-gray-400 capitalize">Ubicación: {s.location} | Cantidad: {s.quantity} u.</div>
+                  <div className="text-xs text-amber-400 mt-1 font-mono">Vence el: {s.expirationDate}</div>
+                </div>
+                <Badge tone="amber">Vence pronto</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -482,6 +562,413 @@ function Perfil() {
           {msg && <p className="text-sm text-gold-300">{msg}</p>}
         </form>
       </Card>
+    </div>
+  );
+}
+
+function Logistica() {
+  const {
+    bottles,
+    purchases,
+    transfers,
+    addPurchase,
+    sendTransfer,
+    receiveTransfer,
+    markPurchaseAsPaid,
+    stocks,
+  } = useApp();
+
+  const [subTab, setSubTab] = useState("compras");
+  const [simulatedUser, setSimulatedUser] = useState("Carlos Medina");
+
+  // Formulario Compras
+  const [purchaseForm, setPurchaseForm] = useState({
+    productId: bottles[0]?.id || "",
+    wholesaler: "Pasifox",
+    invoiceNumber: "",
+    paymentType: "crédito",
+    paymentStatus: "pendiente",
+    quantity: "",
+    purchasePrice: "",
+    expirationDate: "",
+  });
+
+  // Formulario Transferencias
+  const [transferForm, setTransferForm] = useState({
+    productId: bottles[0]?.id || "",
+    originLocation: "depósito",
+    destinationLocation: "barra",
+    quantity: "",
+  });
+
+  const handlePurchaseSubmit = (e) => {
+    e.preventDefault();
+    if (!purchaseForm.productId || !purchaseForm.quantity || !purchaseForm.purchasePrice) return;
+    
+    addPurchase({
+      wholesaler: purchaseForm.wholesaler,
+      invoiceNumber: purchaseForm.invoiceNumber || `FC-${Math.floor(Math.random() * 900000 + 100000)}`,
+      paymentType: purchaseForm.paymentType,
+      paymentStatus: purchaseForm.paymentStatus,
+      items: [
+        {
+          productId: purchaseForm.productId,
+          quantity: Number(purchaseForm.quantity),
+          purchasePrice: Number(purchaseForm.purchasePrice),
+          expirationDate: purchaseForm.expirationDate || null,
+        },
+      ],
+    });
+
+    setPurchaseForm((prev) => ({
+      ...prev,
+      invoiceNumber: "",
+      quantity: "",
+      purchasePrice: "",
+      expirationDate: "",
+    }));
+  };
+
+  const handleTransferSubmit = (e) => {
+    e.preventDefault();
+    if (!transferForm.productId || !transferForm.quantity) return;
+
+    try {
+      sendTransfer({
+        items: [
+          {
+            productId: transferForm.productId,
+            quantity: Number(transferForm.quantity),
+          },
+        ],
+        originLocation: transferForm.originLocation,
+        destinationLocation: transferForm.destinationLocation,
+        senderUserId: simulatedUser, // Usuario actual logueado simulado
+      });
+      setTransferForm((prev) => ({ ...prev, quantity: "" }));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // Helper para buscar nombre de producto por id
+  const getProdName = (id) => bottles.find((b) => b.id === id)?.name || "Desconocido";
+
+  // Helper para ver stock por ubicación en tiempo real
+  const getStockQty = (productId, location) => {
+    const s = stocks.find((st) => st.productId === productId && st.location === location);
+    return s ? s.quantity : 0;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Selector de Usuario Simulado para Roles y Seguridad */}
+      <Card className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gold-500/20 bg-gold-500/5">
+        <div>
+          <h4 className="font-semibold text-gold-300">Simulador de Usuario y Roles</h4>
+          <p className="text-xs text-gray-400">Elegí qué usuario realiza las acciones en la UI para probar el control de acceso (SOLID/Domain).</p>
+        </div>
+        <div className="w-full md:w-80">
+          <Select value={simulatedUser} onChange={(e) => setSimulatedUser(e.target.value)}>
+            <option value="Carlos Medina">Carlos Medina (ADMIN)</option>
+            <option value="Martín Gómez">Martín Gómez (DESPACHADOR)</option>
+            <option value="Lucía Fernández">Lucía Fernández (RECEPTOR)</option>
+            <option value="Diego Sosa">Diego Sosa (RECEPTOR - INACTIVO)</option>
+          </Select>
+        </div>
+      </Card>
+
+      <div className="flex gap-2">
+        <Button variant={subTab === "compras" ? "primary" : "ghost"} onClick={() => setSubTab("compras")}>
+          Compras y Facturas
+        </Button>
+        <Button variant={subTab === "transferencias" ? "primary" : "ghost"} onClick={() => setSubTab("transferencias")}>
+          Traslados (Doble Confirmación)
+        </Button>
+      </div>
+
+      {subTab === "compras" && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Alta Compra */}
+          <Card className="p-6 lg:col-span-2 space-y-4">
+            <div>
+              <h3 className="font-semibold">Registrar Compra a Mayorista</h3>
+              <p className="text-xs text-gray-400">Ingreso directo de facturas (contado/crédito)</p>
+            </div>
+            <form onSubmit={handlePurchaseSubmit} className="space-y-4">
+              <Field label="Proveedor/Mayorista">
+                <Select
+                  value={purchaseForm.wholesaler}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, wholesaler: e.target.value })}
+                >
+                  <option>Pasifox</option>
+                  <option>Distribuidora Sur</option>
+                  <option>Mayorista Norte</option>
+                </Select>
+              </Field>
+
+              <Field label="Producto">
+                <Select
+                  value={purchaseForm.productId}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, productId: e.target.value })}
+                >
+                  {bottles.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Nro de Factura">
+                  <Input
+                    placeholder="Ej: FC-0001-23"
+                    value={purchaseForm.invoiceNumber}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, invoiceNumber: e.target.value })}
+                  />
+                </Field>
+                <Field label="Condición de Pago">
+                  <Select
+                    value={purchaseForm.paymentType}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, paymentType: e.target.value })}
+                  >
+                    <option value="contado">Contado</option>
+                    <option value="crédito">Crédito</option>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Cantidad">
+                  <Input
+                    type="number"
+                    min="1"
+                    required
+                    placeholder="Cantidad"
+                    value={purchaseForm.quantity}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })}
+                  />
+                </Field>
+                <Field label="Costo Unitario ($)">
+                  <Input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="Costo"
+                    value={purchaseForm.purchasePrice}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, purchasePrice: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Fecha de Vencimiento (Opcional)">
+                <Input
+                  type="date"
+                  value={purchaseForm.expirationDate}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, expirationDate: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Estado de Pago">
+                <Select
+                  value={purchaseForm.paymentStatus}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, paymentStatus: e.target.value })}
+                >
+                  <option value="pendiente">Pendiente de Pago</option>
+                  <option value="pagado">Pagado</option>
+                </Select>
+              </Field>
+
+              <Button type="submit" className="w-full">
+                Registrar e Ingresar Stock
+              </Button>
+            </form>
+          </Card>
+
+          {/* Historial Compras */}
+          <Card className="p-6 lg:col-span-3 space-y-4">
+            <h3 className="font-semibold">Historial de Compras</h3>
+            {purchases.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8 border border-white/5 rounded-xl bg-ink-850">
+                Aún no hay compras registradas en esta sesión.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {purchases.map((p) => {
+                  const item = p.items[0]; // Mostramos el primer item para simplificar UI
+                  const total = item ? item.quantity * item.purchasePrice : 0;
+                  return (
+                    <div key={p.id} className="rounded-xl border border-white/5 bg-ink-850 p-4 flex justify-between items-center">
+                      <div>
+                        <div className="font-medium text-gray-200">{p.wholesaler}</div>
+                        <div className="text-xs text-gray-500">
+                          Factura: {p.invoiceNumber} | Tipo: <span className="capitalize">{p.paymentType}</span>
+                        </div>
+                        <div className="text-sm text-gold-300 mt-1">
+                          {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-2">
+                        <div className="font-bold text-gray-200">{formatARS(total)}</div>
+                        <div className="flex gap-2 items-center">
+                          <Badge tone={p.paymentStatus === "pagado" ? "green" : "red"}>
+                            {p.paymentStatus === "pagado" ? "Pagado" : "Pendiente"}
+                          </Badge>
+                          {p.paymentStatus === "pendiente" && (
+                            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => markPurchaseAsPaid(p.id)}>
+                              Marcar Pago
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {subTab === "transferencias" && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Enviar Mercadería */}
+          <Card className="p-6 lg:col-span-2 space-y-4">
+            <div>
+              <h3 className="font-semibold">Despachar Traslado</h3>
+              <p className="text-xs text-gray-400">Envío pendiente de confirmación por receptor</p>
+            </div>
+            <form onSubmit={handleTransferSubmit} className="space-y-4">
+              <Field label="Producto">
+                <Select
+                  value={transferForm.productId}
+                  onChange={(e) => setTransferForm({ ...transferForm, productId: e.target.value })}
+                >
+                  {bottles.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Origen">
+                  <Select
+                    value={transferForm.originLocation}
+                    onChange={(e) => setTransferForm({ ...transferForm, originLocation: e.target.value })}
+                  >
+                    <option value="depósito">Depósito</option>
+                    <option value="barra">Barra</option>
+                  </Select>
+                </Field>
+                <Field label="Destino">
+                  <Select
+                    value={transferForm.destinationLocation}
+                    onChange={(e) => setTransferForm({ ...transferForm, destinationLocation: e.target.value })}
+                  >
+                    <option value="barra">Barra</option>
+                    <option value="depósito">Depósito</option>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="p-3 bg-white/5 rounded-xl border border-white/5 flex justify-between text-xs text-gray-400">
+                <div>Stock Origen: <span className="text-gray-200 font-semibold">{getStockQty(transferForm.productId, transferForm.originLocation)} u.</span></div>
+                <div>Stock Destino: <span className="text-gray-200 font-semibold">{getStockQty(transferForm.productId, transferForm.destinationLocation)} u.</span></div>
+              </div>
+
+              <Field label="Cantidad a Trasladar">
+                <Input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="Cantidad"
+                  value={transferForm.quantity}
+                  onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
+                />
+              </Field>
+
+              <Button type="submit" className="w-full">
+                Despachar Mercadería
+              </Button>
+            </form>
+          </Card>
+
+          {/* En tránsito / Historial */}
+          <Card className="p-6 lg:col-span-3 space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold">Envíos en Tránsito (Pendientes)</h3>
+              {transfers.filter((t) => t.status === "PENDING").length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4 border border-white/5 rounded-xl bg-ink-850">
+                  No hay envíos pendientes de recepción.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {transfers
+                    .filter((t) => t.status === "PENDING")
+                    .map((t) => {
+                      const item = t.items[0];
+                      return (
+                        <div key={t.id} className="rounded-xl border border-white/5 bg-ink-850 p-4 flex justify-between items-center">
+                          <div>
+                            <div className="font-medium text-gray-200 capitalize">
+                              {t.originLocation} ➔ {t.destinationLocation}
+                            </div>
+                            <div className="text-xs text-gray-500">Despachado por: {t.senderUserId}</div>
+                            <div className="text-sm text-gold-300 mt-1">
+                              {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                            </div>
+                          </div>
+                          <Button variant="success" className="px-3 py-1.5 text-xs shrink-0" onClick={() => {
+                            try {
+                              receiveTransfer(t.id, simulatedUser);
+                            } catch (err) {
+                              alert(err.message);
+                            }
+                          }}>
+                            Confirmar Recepción
+                          </Button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4 border-t border-white/5 pt-4">
+              <h3 className="font-semibold text-gray-300">Historial de Traslados</h3>
+              {transfers.filter((t) => t.status === "CONFIRMED").length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Aún no hay traslados completados.</p>
+              ) : (
+                <div className="space-y-2">
+                  {transfers
+                    .filter((t) => t.status === "CONFIRMED")
+                    .map((t) => {
+                      const item = t.items[0];
+                      return (
+                        <div key={t.id} className="rounded-xl border border-white/5 bg-ink-900/50 p-3 flex justify-between items-center text-xs">
+                          <div>
+                            <span className="font-medium text-gray-300 capitalize">
+                              {t.originLocation} ➔ {t.destinationLocation}
+                            </span>
+                            <span className="mx-2 text-gray-600">|</span>
+                            <span className="text-gray-400">Recibió: {t.receiverUserId}</span>
+                            <div className="text-gold-400 mt-0.5">
+                              {item ? `${getProdName(item.productId)} (x${item.quantity})` : ""}
+                            </div>
+                          </div>
+                          <Badge tone="green">Completado</Badge>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
