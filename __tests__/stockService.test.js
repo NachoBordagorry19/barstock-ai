@@ -99,4 +99,109 @@ describe('StockService - Registro de Compras (TDD)', () => {
       origin: 'Pasifox',
     });
   });
+
+  describe('Transferencia entre ubicaciones con doble confirmación', () => {
+    let mockStockRepository;
+    let mockTransferRepository;
+
+    beforeEach(() => {
+      mockStockRepository = {
+        stocks: [
+          { productId: 'prod-1', location: 'depósito', quantity: 10 },
+          { productId: 'prod-1', location: 'barra', quantity: 2 },
+        ],
+        getByProductAndLocation: jest.fn((productId, location) => {
+          return mockStockRepository.stocks.find(
+            s => s.productId === productId && s.location === location
+          ) || { productId, location, quantity: 0 };
+        }),
+        save: jest.fn((stock) => {
+          const index = mockStockRepository.stocks.findIndex(
+            s => s.productId === stock.productId && s.location === stock.location
+          );
+          if (index !== -1) {
+            mockStockRepository.stocks[index] = stock;
+          } else {
+            mockStockRepository.stocks.push(stock);
+          }
+          return stock;
+        }),
+      };
+
+      mockTransferRepository = {
+        transfers: [],
+        save: jest.fn((transfer) => {
+          if (!transfer.id) {
+            transfer.id = `trans-${mockTransferRepository.transfers.length + 1}`;
+            mockTransferRepository.transfers.push(transfer);
+          } else {
+            const index = mockTransferRepository.transfers.findIndex(t => t.id === transfer.id);
+            if (index !== -1) mockTransferRepository.transfers[index] = transfer;
+          }
+          return transfer;
+        }),
+        findById: jest.fn((id) => mockTransferRepository.transfers.find(t => t.id === id)),
+      };
+
+      // Inyectamos también los nuevos repositorios en el servicio
+      stockService = new StockService(
+        mockProductRepository,
+        mockPurchaseRepository,
+        mockMovementRepository,
+        mockStockRepository,
+        mockTransferRepository
+      );
+    });
+
+    test('Debería registrar un envío de mercadería (pendiente) y restar del origen, pero no sumar al destino todavía', () => {
+      const transferData = {
+        items: [{ productId: 'prod-1', quantity: 5 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-envia'
+      };
+
+      const transfer = stockService.dispatchTransfer(transferData);
+
+      // 1. Debe estar en estado PENDING
+      expect(transfer).toBeDefined();
+      expect(transfer.id).toBeDefined();
+      expect(transfer.status).toBe('PENDING');
+      expect(transfer.senderUserId).toBe('user-envia');
+
+      // 2. Debe restar stock del origen (10 - 5 = 5)
+      const originStock = mockStockRepository.getByProductAndLocation('prod-1', 'depósito');
+      expect(originStock.quantity).toBe(5);
+
+      // 3. NO debe sumar stock al destino todavía (sigue en 2)
+      const destStock = mockStockRepository.getByProductAndLocation('prod-1', 'barra');
+      expect(destStock.quantity).toBe(2);
+    });
+
+    test('Debería confirmar una transferencia pendiente, sumando al destino y registrando el receptor', () => {
+      // Primero creamos una transferencia pendiente en el repositorio
+      const pendingTransfer = {
+        id: 'trans-1',
+        items: [{ productId: 'prod-1', quantity: 5 }],
+        originLocation: 'depósito',
+        destinationLocation: 'barra',
+        senderUserId: 'user-envia',
+        status: 'PENDING',
+      };
+      mockTransferRepository.transfers.push(pendingTransfer);
+
+      const confirmed = stockService.confirmTransfer('trans-1', 'user-recibe');
+
+      // 1. El estado debe ser CONFIRMED y guardar quién lo recibió
+      expect(confirmed.status).toBe('CONFIRMED');
+      expect(confirmed.receiverUserId).toBe('user-recibe');
+
+      // 2. Debe sumar stock al destino (2 + 5 = 7)
+      const destStock = mockStockRepository.getByProductAndLocation('prod-1', 'barra');
+      expect(destStock.quantity).toBe(7);
+
+      // 3. Debe registrar un movimiento de stock para la barra
+      expect(mockMovementRepository.save).toHaveBeenCalled();
+    });
+  });
 });
