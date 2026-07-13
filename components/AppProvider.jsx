@@ -117,10 +117,20 @@ export function AppProvider({ children }) {
   const productRepository = useMemo(() => ({
     findById: (id) => {
       const b = bottles.find(x => x.id === id);
-      return b ? new Product(b) : null;
+      if (!b) return null;
+      return new Product({
+        ...b,
+        cost: b.cost !== undefined ? b.cost : Math.round(b.price / 1.20),
+        marginPercent: b.marginPercent !== undefined ? b.marginPercent : 20
+      });
     },
     save: (updatedProduct) => {
-      const plain = { ...updatedProduct };
+      const plain = {
+        ...updatedProduct,
+        cost: updatedProduct.cost,
+        marginPercent: updatedProduct.marginPercent,
+        price: updatedProduct.price
+      };
       setBottles(prev => prev.map(b => b.id === plain.id ? plain : b));
       return updatedProduct;
     }

@@ -214,7 +214,13 @@ function Inventario() {
                       <Badge tone="gold">{b.category}</Badge>
                       {b.sealed <= b.threshold && <Badge tone="red">Bajo</Badge>}
                     </div>
-                    <div className="mt-1 font-mono text-xs text-gray-500">cod: {b.barcode || "—"}</div>
+                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                      <span>cod: {b.barcode || "—"}</span>
+                      <span>•</span>
+                      <span className="text-emerald-400">Venta: {formatARS(b.price)}</span>
+                      <span>•</span>
+                      <span>Costo: {formatARS(b.cost !== undefined ? b.cost : Math.round(b.price / 1.20))} ({b.marginPercent !== undefined ? b.marginPercent : 20}%)</span>
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-4 text-center text-xs">
                     <Counter label="Cerr." value={b.sealed} tone="gold" />
@@ -265,6 +271,25 @@ function EditRow({ bottle, onCancel, onSave, categories }) {
         <Field label="Abiertas"><Input type="number" min="0" value={f.open} onChange={(e) => setF({ ...f, open: Number(e.target.value) })} /></Field>
         <Field label="Vacías"><Input type="number" min="0" value={f.empty} onChange={(e) => setF({ ...f, empty: Number(e.target.value) })} /></Field>
         <Field label="Mínimo"><Input type="number" min="0" value={f.threshold} onChange={(e) => setF({ ...f, threshold: Number(e.target.value) })} /></Field>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Costo de compra ($)">
+          <Input type="number" min="0" value={f.cost !== undefined ? f.cost : Math.round(f.price / 1.20)} onChange={(e) => {
+            const costVal = Number(e.target.value);
+            const marginVal = f.marginPercent !== undefined ? f.marginPercent : 20;
+            setF({ ...f, cost: costVal, price: Math.round(costVal * (1 + marginVal / 100)) });
+          }} />
+        </Field>
+        <Field label="Margen (%)">
+          <Input type="number" min="0" value={f.marginPercent !== undefined ? f.marginPercent : 20} onChange={(e) => {
+            const marginVal = Number(e.target.value);
+            const costVal = f.cost !== undefined ? f.cost : Math.round(f.price / 1.20);
+            setF({ ...f, marginPercent: marginVal, price: Math.round(costVal * (1 + marginVal / 100)) });
+          }} />
+        </Field>
+        <Field label="Precio de venta ($)">
+          <Input type="number" min="0" value={f.price} onChange={(e) => setF({ ...f, price: Number(e.target.value) })} />
+        </Field>
       </div>
       <div className="flex gap-2">
         <Button onClick={() => onSave(f)}>Guardar cambios</Button>
