@@ -33,3 +33,5 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+
+/lib/generated/prisma
