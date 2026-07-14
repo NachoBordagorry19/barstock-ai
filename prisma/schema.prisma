@@ -1,0 +1,90 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id     String  @id
+  name   String
+  role   String  // "ADMIN", "RECEPTOR", "DESPACHADOR"
+  active Boolean @default(true)
+}
+
+model Product {
+  id            String         @id
+  name          String
+  category      String
+  barcode       String         @unique
+  stock         Int            @default(0)
+  cost          Float          @default(0.0)
+  marginPercent Float          @default(20.0)
+  price         Float          @default(0.0)
+  stocks        StockItem[]
+  purchaseItems PurchaseItem[]
+  transferItems TransferItem[]
+  movements     Movement[]
+}
+
+model StockItem {
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location       String    // "depósito" o "barra"
+  quantity       Int       @default(0)
+  expirationDate DateTime?
+
+  @@id([productId, location]) // Clave primaria compuesta
+}
+
+model Purchase {
+  id            String         @id
+  wholesaler    String
+  invoiceNumber String
+  paymentType   String
+  paymentStatus String         @default("pendiente")
+  createdAt     DateTime       @default(now())
+  items         PurchaseItem[]
+}
+
+model PurchaseItem {
+  id            String   @id @default(uuid())
+  purchaseId    String
+  purchase      Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  quantity      Int
+  purchasePrice Float
+}
+
+model Transfer {
+  id                  String         @id
+  originLocation      String
+  destinationLocation String
+  senderUserId        String
+  receiverUserId      String?
+  status              String         @default("PENDING") // "PENDING", "CONFIRMED"
+  createdAt           DateTime       @default(now())
+  items               TransferItem[]
+}
+
+model TransferItem {
+  id         String   @id @default(uuid())
+  transferId String
+  transfer   Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+}
+
+model Movement {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  type        String   // "INGRESAR", "TRASLADAR", etc.
+  origin      String?
+  destination String?
+  createdAt   DateTime @default(now())
+}
