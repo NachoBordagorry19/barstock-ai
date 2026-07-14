@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useMemo, useCallback } from "react";
+import { createContext, useContext, useState, useMemo, useCallback, useEffect } from "react";
 import {
   initialBottles,
   initialScannerUsers,
@@ -52,6 +52,75 @@ export function AppProvider({ children }) {
     return list;
   });
 
+  const fetchInitialData = useCallback(async () => {
+    try {
+      const response = await fetch('/api/data');
+      const data = await response.json();
+      if (data.success) {
+        // Map products + stocks to bottles
+        const mappedBottles = data.products.map(p => {
+          const depStock = data.stocks.find(s => s.productId === p.id && s.location === 'depósito');
+          const barStock = data.stocks.find(s => s.productId === p.id && s.location === 'barra');
+          return {
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            barcode: p.barcode,
+            sealed: depStock ? depStock.quantity : 0,
+            open: barStock ? barStock.quantity : 0,
+            empty: 0,
+            threshold: 3,
+            price: p.price,
+            cost: p.cost,
+            marginPercent: p.marginPercent
+          };
+        });
+        setBottles(mappedBottles);
+
+        // Map scannerUsers and branchAdmins
+        const mappedScannerUsers = data.users
+          .filter(u => u.role !== 'ADMIN')
+          .map(u => ({
+            id: u.id,
+            name: u.name,
+            code: `SC-${u.id}`,
+            shift: 'Noche',
+            active: u.active
+          }));
+        setScannerUsers(mappedScannerUsers);
+
+        const mappedBranchAdmins = data.users
+          .filter(u => u.role === 'ADMIN')
+          .map(u => ({
+            id: u.id,
+            name: u.name,
+            branch: 'Palermo Soho',
+            email: `${u.name.toLowerCase().replace(/\s/g, '')}@barstock.ai`,
+            active: u.active
+          }));
+        setBranchAdmins(mappedBranchAdmins);
+
+        setPurchases(data.purchases);
+        setTransfers(data.transfers);
+        setMovements(data.movements);
+        
+        // Map stocks
+        setStocks(data.stocks.map(s => ({
+          productId: s.productId,
+          location: s.location,
+          quantity: s.quantity,
+          expirationDate: s.expirationDate ? s.expirationDate.split('T')[0] : null
+        })));
+      }
+    } catch (e) {
+      console.error("Error loading data from API:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInitialData();
+  }, [fetchInitialData]);
+
   const navigate = useCallback((s) => setScreen(s), []);
 
   const login = useCallback((selectedRole) => {
@@ -67,51 +136,34 @@ export function AppProvider({ children }) {
   }, []);
 
   // --- Inventario (Admin de sucursal) ---
-  const addBottle = useCallback((bottle) => {
+  const addBottle = useCallback(async (bottle) => {
     const newId = uid();
-    setBottles((prev) => [{ ...bottle, id: newId }, ...prev]);
-    // Inicializar stocks por ubicación para el nuevo producto
-    setStocks((prev) => [
-      ...prev,
-      { productId: newId, location: "depósito", quantity: Number(bottle.sealed || 0) },
-      { productId: newId, location: "barra", quantity: Number(bottle.open || 0) }
-    ]);
-  }, []);
+    await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', id: newId, data: bottle })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
-  const updateBottle = useCallback((id, patch) => {
-    setBottles((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-    // Si se actualiza el stock directamente desde Inventario, reflejarlo en ubicaciones
-    if (patch.sealed !== undefined) {
-      setStocks((prev) =>
-        prev.map((s) => (s.productId === id && s.location === "depósito" ? { ...s, quantity: Number(patch.sealed) } : s))
-      );
-    }
-    if (patch.open !== undefined) {
-      setStocks((prev) =>
-        prev.map((s) => (s.productId === id && s.location === "barra" ? { ...s, quantity: Number(patch.open) } : s))
-      );
-    }
-  }, []);
+  const updateBottle = useCallback(async (id, patch) => {
+    await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, data: patch })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
   // El conteo del scanner ajusta abiertas/vacías/cerradas de una botella.
-  const registerScan = useCallback((bottleId, state) => {
-    setBottles((prev) =>
-      prev.map((b) => {
-        if (b.id !== bottleId) return b;
-        const next = { ...b };
-        if (state === "cerrada") next.sealed += 1;
-        if (state === "abierta") next.open += 1;
-        if (state === "vacia") next.empty += 1;
-        return next;
-      })
-    );
-    // Reflejar conteo en stock de ubicaciones
-    if (state === "cerrada") {
-      setStocks(prev => prev.map(s => s.productId === bottleId && s.location === "depósito" ? { ...s, quantity: s.quantity + 1 } : s));
-    } else if (state === "abierta") {
-      setStocks(prev => prev.map(s => s.productId === bottleId && s.location === "barra" ? { ...s, quantity: s.quantity + 1 } : s));
-    }
-  }, []);
+  const registerScan = useCallback(async (bottleId, state) => {
+    await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'scan', id: bottleId, data: { state } })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
   // --- Implementación de Repositorios para conectar StockService con React State ---
   const productRepository = useMemo(() => ({
@@ -243,21 +295,50 @@ export function AppProvider({ children }) {
   }, [productRepository, purchaseRepository, movementRepository, stockRepository, transferRepository, userRepository]);
 
   // Acciones expuestas a la interfaz
-  const addPurchase = useCallback((purchaseData) => {
-    return stockService.registerPurchase(purchaseData);
-  }, [stockService]);
+  const addPurchase = useCallback(async (purchaseData) => {
+    const response = await fetch('/api/purchases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(purchaseData)
+    });
+    const resData = await response.json();
+    if (!resData.success) throw new Error(resData.error);
+    fetchInitialData();
+    return resData.data;
+  }, [fetchInitialData]);
 
-  const sendTransfer = useCallback((transferData) => {
-    return stockService.dispatchTransfer(transferData);
-  }, [stockService]);
+  const sendTransfer = useCallback(async (transferData) => {
+    const response = await fetch('/api/transfers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transferData)
+    });
+    const resData = await response.json();
+    if (!resData.success) throw new Error(resData.error);
+    fetchInitialData();
+    return resData.data;
+  }, [fetchInitialData]);
 
-  const receiveTransfer = useCallback((transferId, userId) => {
-    return stockService.confirmTransfer(transferId, userId);
-  }, [stockService]);
+  const receiveTransfer = useCallback(async (transferId, userId) => {
+    const response = await fetch('/api/transfers/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transferId, userId })
+    });
+    const resData = await response.json();
+    if (!resData.success) throw new Error(resData.error);
+    fetchInitialData();
+    return resData.data;
+  }, [fetchInitialData]);
 
-  const markPurchaseAsPaid = useCallback((purchaseId) => {
-    setPurchases(prev => prev.map(p => p.id === purchaseId ? { ...p, paymentStatus: "pagado" } : p));
-  }, []);
+  const markPurchaseAsPaid = useCallback(async (purchaseId) => {
+    await fetch('/api/purchases', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: purchaseId })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
   const getExpiredItems = useCallback((date) => {
     return stockService.getExpiredItems(date);
@@ -268,17 +349,34 @@ export function AppProvider({ children }) {
   }, [stockService]);
 
   // --- Usuarios scanner (Admin de sucursal: modifica / desactiva) ---
-  const updateScannerUser = useCallback((id, patch) => {
-    setScannerUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
-  }, []);
+  const updateScannerUser = useCallback(async (id, patch) => {
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, data: patch })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
   // --- Admin de la App: branch admins ---
-  const addBranchAdmin = useCallback((admin) => {
-    setBranchAdmins((prev) => [{ ...admin, id: uid() }, ...prev]);
-  }, []);
-  const updateBranchAdmin = useCallback((id, patch) => {
-    setBranchAdmins((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
-  }, []);
+  const addBranchAdmin = useCallback(async (admin) => {
+    const newId = uid();
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', id: newId, data: { ...admin, role: 'ADMIN' } })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
+
+  const updateBranchAdmin = useCallback(async (id, patch) => {
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, data: patch })
+    });
+    fetchInitialData();
+  }, [fetchInitialData]);
 
   // --- Admin de la App: dispositivos ---
   const addDevice = useCallback((device) => {
