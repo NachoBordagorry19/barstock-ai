@@ -1,36 +1,82 @@
 # Barstock AI
 
-Prototipo funcional (maqueta interactiva) del sistema de **gestión de stock para bares** Barstock AI.
-Construido con **Next.js 14** + **Tailwind CSS**. Sin backend: los datos están precargados y los cambios viven
-en memoria durante la sesión (se reinician al recargar la página).
+MVP colaborativo para gestionar inventario, compras, movimientos y transferencias de stock en bares y locales gastronómicos.
 
-## Pantallas
+> Este proyecto fue construido mediante un flujo de **desarrollo asistido por agentes de IA**. La IA se utilizó para acelerar la implementación; el trabajo humano se centró en definir requisitos, dividir tareas, dirigir iteraciones, integrar resultados y validar el funcionamiento del MVP.
 
-- **Landing** — SEO ("gestión de stock para bares", "control de inventario de bebidas", "reducción de mermas"),
-  hero, beneficios, cómo funciona y formulario de contacto.
-- **Login** — acceso simulado por dropdown de rol (muestra campo de contraseña pero no valida).
-- **Administrador de la App** — panel global, alta/gestión de admins de sucursal y dispositivos, reportes globales.
-- **Administrador de Sucursal** — dashboard, carga y edición de inventario, alertas de compra, gestión de empleados
-  scanner (modificar/desactivar), exportación a Excel y cambio de contraseña.
-- **Scanner** — modo código de barras (cámara simulada + botones Cerrada/Abierta/Vacía) y modo Visión Artificial
-  (analiza la foto de muestra y detecta cantidad y nivel de contenido).
+## Objetivo
 
-## Desarrollo local
+Centralizar el control de bebidas y productos para reducir faltantes, vencimientos y diferencias entre depósito y barra. El MVP explora una experiencia completa para administradores, encargados y operadores de escáner.
+
+## Funcionalidades implementadas
+
+- Panel global y panel por sucursal.
+- Catálogo, inventario y stock por ubicación.
+- Registro de compras y estado de pago.
+- Transferencias entre depósito y barra.
+- Movimientos y trazabilidad básica de stock.
+- Costos, márgenes y cálculo de precios de venta.
+- Alertas de reposición y vencimiento.
+- Exportación de información a Excel.
+- Flujos diferenciados según el rol del usuario.
+- Escaneo de códigos y visión artificial presentados como simulaciones de interfaz.
+
+## Tecnologías
+
+- Next.js 14
+- React 18
+- Tailwind CSS
+- API Routes de Next.js
+- Prisma ORM
+- PostgreSQL
+- Jest y Testing Library
+- Vercel
+
+## Alcance del MVP
+
+Barstock AI es un prototipo funcional y no un producto listo para producción. La autenticación, el escaneo por cámara y el análisis visual incluyen comportamientos simulados. El repositorio sí contiene una capa de persistencia experimental con Prisma/PostgreSQL y rutas API; por eso algunas pantallas pueden seguir usando datos de demostración mientras avanza la integración.
+
+## Desarrollo asistido por IA
+
+El proyecto también funciona como evidencia de una habilidad complementaria al desarrollo tradicional:
+
+- Convertir una necesidad de negocio en requisitos y tareas técnicas.
+- Orquestar agentes de programación y trabajar por iteraciones.
+- Revisar e integrar cambios producidos por IA.
+- Utilizar pruebas para detectar regresiones y validar reglas.
+- Reconocer qué partes siguen siendo simuladas o requieren endurecimiento antes de producción.
+
+El uso de IA se declara de forma explícita; no se atribuye autoría manual a cada línea generada.
+
+## Ejecución local
+
+### Requisitos
+
+- Node.js 20 o posterior
+- PostgreSQL accesible localmente o mediante un proveedor externo
+
+### Instalación
 
 ```bash
 npm install
+cp .env.example .env
+npx prisma generate
+npx prisma migrate dev
 npm run dev
 ```
 
-Abrí http://localhost:3000
+Abra `http://localhost:3000`.
 
-## Deploy
+La variable `DATABASE_URL` debe apuntar a una base PostgreSQL de desarrollo. No guarde credenciales reales en el repositorio.
 
-Conectado a Vercel: cada `git push` a `main`/`master` dispara un deploy automático.
-
-## Build de producción
+## Pruebas y build
 
 ```bash
+npm test
 npm run build
 npm start
 ```
+
+## Estado
+
+MVP en evolución. Su objetivo es validar la propuesta, los flujos principales y la arquitectura antes de abordar autenticación real, permisos reforzados, observabilidad y operación en producción.
