@@ -4,10 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "jest"
+    "test": "jest",
+    "test:unit": "jest --runInBand __tests__/stockService.test.js",
+    "test:integration": "jest --runInBand __tests__/prismaRepositories.test.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node prisma/seed.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: barstock_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: barstock_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U barstock_user -d barstock_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://barstock_user:ci_password@localhost:5432/barstock_db?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npx prisma migrate deploy
+      - run: npm test -- --runInBand
+      - run: npm run build
