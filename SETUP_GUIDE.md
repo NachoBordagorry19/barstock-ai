@@ -1,100 +1,76 @@
-# 🚀 Guía de Configuración del Entorno Local para el Equipo
+# Configuración local
 
-Esta guía detalla los pasos necesarios para que cualquier integrante del equipo configure y ejecute el proyecto **Barstock AI** con persistencia en la base de datos local PostgreSQL utilizando Docker y Prisma 7.
+Esta guía levanta Barstock AI con PostgreSQL en Docker y Prisma. No requiere una rama especial ni un cliente gráfico de base de datos.
 
----
+## Requisitos
 
-## 📋 Requisitos Previos
+- Node.js 20 o superior
+- Docker Desktop o Docker Engine con Compose
+- Git
 
-Antes de comenzar, asegúrate de tener instalado en tu computadora:
-1. **Node.js** (Versión 18 o superior).
-2. **Git** para el control de versiones.
-3. **Docker Desktop** (Asegúrate de tenerlo abierto y ejecutándose).
-4. **DBeaver** (Cliente de base de datos universal).
+## Puesta en marcha
 
----
+1. Instala las dependencias reproducibles del proyecto:
 
-## ⚙️ Paso a Paso para la Configuración
+   ```bash
+   npm ci
+   ```
 
-### 1. Clonar el repositorio y cambiar a la rama de base de datos
-Si aún no estás en la rama correspondiente, clona el proyecto y muévete a la rama `feature/IntentoConectarBaseDatos`:
+2. Crea tu configuración local:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Cambia `POSTGRES_PASSWORD` en `.env` y usa el mismo valor dentro de `DATABASE_URL`. El archivo `.env` está ignorado por Git y no debe subirse.
+
+3. Inicia PostgreSQL:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. Genera el cliente, aplica las migraciones y carga los datos de demostración:
+
+   ```bash
+   npm run db:generate
+   npm run db:migrate
+   npm run db:seed
+   ```
+
+5. Inicia la aplicación:
+
+   ```bash
+   npm run dev
+   ```
+
+   Abre <http://localhost:3000>.
+
+## Verificación
+
+Las pruebas unitarias no necesitan base de datos:
+
 ```bash
-git checkout feature/IntentoConectarBaseDatos
+npm run test:unit
 ```
 
-### 2. Instalar dependencias del proyecto
-Ejecuta el siguiente comando en la raíz del proyecto para instalar todas las librerías necesarias, incluyendo Prisma, Postgres drivers y de testing:
+Las pruebas de integración requieren PostgreSQL iniciado y las migraciones aplicadas:
+
 ```bash
-npm install
+npm run test:integration
 ```
 
-### 3. Configurar las Variables de Entorno
-Crea un archivo llamado `.env` en la raíz del proyecto (al mismo nivel que `package.json`). Agrega el siguiente contenido:
+Para ejecutar toda la suite y compilar una versión de producción:
 
-```env
-# URL de conexión a la base de datos de Docker
-DATABASE_URL="postgresql://barstock_user:barstock_secure_password@localhost:5432/barstock_db?schema=public"
-```
-
-> [!WARNING]
-> No subas este archivo `.env` al repositorio Git. Está configurado por defecto en `.gitignore` para proteger las credenciales.
-
-### 4. Levantar la Base de Datos con Docker
-Con Docker Desktop ejecutándose en segundo plano, abre una terminal en la raíz del proyecto y levanta el contenedor de PostgreSQL con:
 ```bash
-docker compose up -d
+npm test -- --runInBand
+npm run build
 ```
-*Este comando descargará la imagen oficial de PostgreSQL e iniciará la base de datos en segundo plano.*
 
-### 5. Sincronizar la Base de Datos (Migraciones)
-Aplica la estructura de tablas al contenedor de base de datos recién creado corriendo:
+## Apagar el entorno
+
 ```bash
-npx prisma migrate dev
+docker compose down
 ```
-*Esto creará la estructura de base de datos e instalará el Prisma Client.*
 
-### 6. Cargar los Datos de Prueba (Seeding)
-Para poblar la base de datos con los productos iniciales y usuarios de prueba (admins y scanners), ejecuta:
-```bash
-node prisma/seed.js
-```
-*Deberías ver un mensaje en consola que dice: `Seeding completed successfully!`*
-
----
-
-## 🔌 Conectar DBeaver a la Base de Datos
-
-Para visualizar y editar los datos directamente desde tu cliente visual:
-
-1. Abre **DBeaver**.
-2. Haz clic en **Nueva conexión** (ícono de enchufe con un "+").
-3. Selecciona **PostgreSQL** y haz clic en *Next*.
-4. Rellena los datos de configuración exactamente como sigue:
-   * **Host:** `localhost`
-   * **Port:** `5432`
-   * **Database:** `barstock_db`
-   * **Username:** `barstock_user`
-   * **Password:** `barstock_secure_password`
-5. Haz clic en **Test Connection** (Probar conexión). DBeaver te pedirá descargar el controlador JDBC de Postgres si es la primera vez (haz clic en *Download*).
-6. Si la prueba es exitosa, haz clic en **Finish**.
-
-> [!TIP]
-> Si DBeaver te muestra una advertencia sobre `pgAgent`, es totalmente inofensivo. Puedes ignorarlo. Tus tablas se encuentran navegando en el menú de la izquierda:
-> `barstock_db` ➔ `Schemas` ➔ `public` ➔ `Tables`.
-
----
-
-## 🏃 Ejecutar la Aplicación y Correr Pruebas
-
-### Ejecutar en Desarrollo
-Para encender el servidor local de Next.js, ejecuta:
-```bash
-npm run dev
-```
-Abre http://localhost:3000 en tu navegador. Toda acción de la UI ahora impactará directamente en la base de datos de Docker.
-
-### Ejecutar Pruebas (Jest)
-Para asegurarte de que todo funciona y no hay regresiones, corre las pruebas unitarias y de integración:
-```bash
-npm run test
-```
+Usa `docker compose down -v` solamente si también quieres eliminar los datos locales del volumen.
